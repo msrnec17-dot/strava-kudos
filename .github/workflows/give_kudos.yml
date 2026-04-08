@@ -10,7 +10,7 @@ env:
   STRAVA_PASSWORD: ${{ secrets.STRAVA_PASSWORD }}
 jobs:
   run-kudos-cron:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v3 
@@ -19,6 +19,6 @@ jobs:
           python-version: '3.10'
           cache: 'pip'
       - run: pip install -r requirements.txt
-      - run: python -m playwright install --with-deps chromium
+      - run: python -m playwright install firefox
       - run: python give_kudos.py
         
