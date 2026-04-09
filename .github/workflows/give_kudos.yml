@@ -2,12 +2,10 @@ name: run-kudos
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "0 9 * * *"
 
 jobs:
   run-kudos:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
 
     steps:
       - name: Checkout repository
@@ -41,7 +39,7 @@ jobs:
             libxfixes3 \
             libxrandr2 \
             libgbm1 \
-            libasound2t64 \
+            libasound2 \
             libpangocairo-1.0-0 \
             libpango-1.0-0 \
             libcairo2 \
@@ -56,6 +54,9 @@ jobs:
         shell: bash
         run: |
           echo "${{ secrets.STRAVA_STATE_B64 }}" | base64 -d > strava_state.json
+          ls -lh strava_state.json
+          head -c 200 strava_state.json || true
 
       - name: Run kudos script
-        run: python give_kudos.py
+        run: |
+          python give_kudos.py
