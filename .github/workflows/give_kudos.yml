@@ -1,4 +1,4 @@
-name: run-kudos-cron
+name: run-kudos
 
 on:
   workflow_dispatch:
@@ -23,8 +23,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Install Playwright Firefox
-        run: python -m playwright install firefox
+      - name: Install Playwright browsers and system dependencies
+        run: |
+          python -m playwright install --with-deps firefox
 
       - name: Restore Strava session
         shell: bash
