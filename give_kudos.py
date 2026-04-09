@@ -29,6 +29,12 @@ def validate_state_file():
 
     log(f"2. STATE OK: cookies={len(data.get('cookies', []))}, origins={len(data.get('origins', []))}")
 
+def get_title(button):
+    try:
+        return (button.get_attribute("title") or "").strip()
+    except:
+        return ""
+
 def has_unfilled_kudos(button):
     try:
         return button.locator("svg[data-testid='unfilled_kudos']").count() > 0
@@ -41,16 +47,13 @@ def has_filled_kudos(button):
     except:
         return False
 
-def get_title(button):
-    try:
-        return (button.get_attribute("title") or "").strip()
-    except:
-        return ""
+def refetch_buttons(page):
+    return page.locator("button[data-testid='kudos_button']")
 
 def click_visible_kudos(page, clicked_keys):
     log("Tražim stvarne Strava kudos gumbe")
 
-    buttons = page.locator("button[data-testid='kudos_button']")
+    buttons = refetch_buttons(page)
     count = buttons.count()
     log(f"Pronađeno kudos gumba: {count}")
 
@@ -58,6 +61,7 @@ def click_visible_kudos(page, clicked_keys):
 
     for i in range(count):
         try:
+            buttons = refetch_buttons(page)
             btn = buttons.nth(i)
 
             if not btn.is_visible():
@@ -87,16 +91,19 @@ def click_visible_kudos(page, clicked_keys):
                 continue
 
             btn.scroll_into_view_if_needed(timeout=2000)
-            time.sleep(0.3)
+            time.sleep(0.5)
 
             btn.click(timeout=5000, force=True)
-            time.sleep(1.5)
+            time.sleep(2.5)
 
-            title_after = get_title(btn)
-            unfilled_after = has_unfilled_kudos(btn)
-            filled_after = has_filled_kudos(btn)
+            buttons_after = refetch_buttons(page)
+            btn_after = buttons_after.nth(i)
 
-            if filled_after or (not unfilled_after) or ("View all kudos" in title_after):
+            title_after = get_title(btn_after)
+            unfilled_after = has_unfilled_kudos(btn_after)
+            filled_after = has_filled_kudos(btn_after)
+
+            if filled_after or ("View all kudos" in title_after) or (not unfilled_after):
                 clicked_keys.add(key)
                 clicked_now += 1
                 log(f"STVARNI kudos dan #{clicked_now} u ovom krugu")
