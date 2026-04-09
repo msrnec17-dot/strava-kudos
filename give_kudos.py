@@ -33,47 +33,68 @@ def click_visible_kudos(page, clicked_keys):
     log("Tražim klikabilne kudos gumbe")
 
     selectors = [
-        "button[title='Give Kudos']",
-        "button[aria-label='Give Kudos']",
-        "button[title*='Give Kudos']",
-        "button[aria-label*='Give Kudos']"
+        "[title*='Kudos']",
+        "[aria-label*='Kudos']",
+        "[title*='kudos']",
+        "[aria-label*='kudos']",
+        "button:has-text('Kudos')",
+        "[data-testid*='kudos']",
+        "button[data-testid*='kudos']",
+        "[class*='kudos']",
+        "button[class*='kudos']"
     ]
 
     clicked_now = 0
 
     for selector in selectors:
-        buttons = page.locator(selector)
-        count = buttons.count()
-        log(f"Selector {selector} -> pronađeno {count}")
+        try:
+            buttons = page.locator(selector)
+            count = buttons.count()
+            log(f"Selector '{selector}' -> pronađeno {count}")
 
-        for i in range(count):
-            try:
-                btn = buttons.nth(i)
+            for i in range(count):
+                try:
+                    btn = buttons.nth(i)
 
-                if not btn.is_visible():
-                    continue
+                    if not btn.is_visible():
+                        continue
 
-                if not btn.is_enabled():
-                    continue
+                    if not btn.is_enabled():
+                        continue
 
-                box = btn.bounding_box()
-                if not box:
-                    continue
+                    box = btn.bounding_box()
+                    if not box:
+                        continue
 
-                key = f"{selector}-{round(box['x'])}-{round(box['y'])}"
-                if key in clicked_keys:
-                    continue
+                    if box["width"] < 20 or box["height"] < 20:
+                        continue
 
-                btn.scroll_into_view_if_needed(timeout=2000)
-                time.sleep(0.3)
-                btn.click(timeout=3000, force=True)
-                clicked_keys.add(key)
-                clicked_now += 1
-                log(f"Kliknut kudos #{clicked_now} u ovom krugu")
-                time.sleep(0.8)
+                    title = btn.get_attribute("title") or ""
+                    aria = btn.get_attribute("aria-label") or ""
+                    cls = btn.get_attribute("class") or ""
 
-            except Exception:
-                pass
+                    signature = f"{selector}|{round(box['x'])}|{round(box['y'])}|{title}|{aria}|{cls}"
+                    if signature in clicked_keys:
+                        continue
+
+                    btn.scroll_into_view_if_needed(timeout=2000)
+                    time.sleep(0.2)
+
+                    try:
+                        btn.click(timeout=3000)
+                    except Exception:
+                        btn.click(timeout=5000, force=True)
+
+                    clicked_keys.add(signature)
+                    clicked_now += 1
+                    log(f"Kliknut kudos #{clicked_now} u ovom krugu")
+                    time.sleep(0.8)
+
+                except Exception:
+                    pass
+
+        except Exception:
+            pass
 
     return clicked_now
 
