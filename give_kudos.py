@@ -29,106 +29,43 @@ def validate_state_file():
 
     log(f"2. STATE OK: cookies={len(data.get('cookies', []))}, origins={len(data.get('origins', []))}")
 
-def get_button_state(locator):
+def has_unfilled_kudos(button):
     try:
-        title = locator.get_attribute("title") or ""
+        return button.locator("svg[data-testid='unfilled_kudos']").count() > 0
     except:
-        title = ""
+        return False
 
+def has_filled_kudos(button):
     try:
-        aria = locator.get_attribute("aria-label") or ""
+        return button.locator("svg[data-testid='filled_kudos']").count() > 0
     except:
-        aria = ""
+        return False
 
+def get_title(button):
     try:
-        pressed = locator.get_attribute("aria-pressed") or ""
+        return (button.get_attribute("title") or "").strip()
     except:
-        pressed = ""
+        return ""
 
-    try:
-        cls = locator.get_attribute("class") or ""
-    except:
-        cls = ""
+def click_visible_kudos(page, clicked_keys):
+    log("Tražim stvarne Strava kudos gumbe")
 
-    return {
-        "title": title,
-        "aria": aria,
-        "pressed": pressed,
-        "class": cls
-    }
-
-def state_signature(state):
-    return f"{state['title']}|{state['aria']}|{state['pressed']}|{state['class']}"
-
-def looks_already_kudosed(state):
-    text = f"{state['title']} {state['aria']} {state['class']} {state['pressed']}".lower()
-    return (
-        "kudos given" in text or
-        "given kudos" in text or
-        "remove kudos" in text or
-        "un-kudo" in text or
-        "unkudo" in text or
-        state["pressed"] == "true"
-    )
-
-def state_changed(before, after):
-    return state_signature(before) != state_signature(after)
-
-def find_kudos_candidates(page):
-    selectors = [
-        "button[title*='kudos']",
-        "button[aria-label*='kudos']",
-        "[role='button'][title*='kudos']",
-        "[role='button'][aria-label*='kudos']",
-        "button:has(svg)",
-        "[role='button']:has(svg)"
-    ]
-
-    candidates = []
-    seen = set()
-
-    for selector in selectors:
-        try:
-            loc = page.locator(selector)
-            count = loc.count()
-            log(f"Selector '{selector}' -> pronađeno {count}")
-
-            for i in range(count):
-                try:
-                    el = loc.nth(i)
-
-                    if not el.is_visible():
-                        continue
-
-                    box = el.bounding_box()
-                    if not box:
-                        continue
-
-                    if box["width"] < 20 or box["height"] < 20:
-                        continue
-
-                    key = f"{round(box['x'])}-{round(box['y'])}-{round(box['width'])}-{round(box['height'])}"
-                    if key in seen:
-                        continue
-
-                    seen.add(key)
-                    candidates.append(el)
-                except:
-                    pass
-        except:
-            pass
-
-    return candidates
-
-def click_real_kudos(page, clicked_keys):
-    log("Tražim stvarne kudos gumbe")
-    candidates = find_kudos_candidates(page)
-    log(f"Ukupno kandidata nakon filtriranja: {len(candidates)}")
+    buttons = page.locator("button[data-testid='kudos_button']")
+    count = buttons.count()
+    log(f"Pronađeno kudos gumba: {count}")
 
     clicked_now = 0
 
-    for idx, btn in enumerate(candidates):
+    for i in range(count):
         try:
+            btn = buttons.nth(i)
+
+            if not btn.is_visible():
+                continue
+
+            if not btn.is_enabled():
+                continue
+
             box = btn.bounding_box()
             if not box:
                 continue
@@ -137,35 +74,40 @@ def click_real_kudos(page, clicked_keys):
             if key in clicked_keys:
                 continue
 
-            before = get_button_state(btn)
+            title_before = get_title(btn)
+            unfilled_before = has_unfilled_kudos(btn)
+            filled_before = has_filled_kudos(btn)
 
-            if looks_already_kudosed(before):
+            log(
+                f"Gumb #{i+1}: title='{title_before}', "
+                f"unfilled={unfilled_before}, filled={filled_before}"
+            )
+
+            if not unfilled_before:
                 continue
 
             btn.scroll_into_view_if_needed(timeout=2000)
             time.sleep(0.3)
 
-            try:
-                btn.click(timeout=3000)
-            except Exception:
-                try:
-                    btn.click(timeout=5000, force=True)
-                except Exception:
-                    continue
+            btn.click(timeout=5000, force=True)
+            time.sleep(1.5)
 
-            time.sleep(1.2)
+            title_after = get_title(btn)
+            unfilled_after = has_unfilled_kudos(btn)
+            filled_after = has_filled_kudos(btn)
 
-            after = get_button_state(btn)
-
-            if state_changed(before, after) or looks_already_kudosed(after):
+            if filled_after or (not unfilled_after) or ("View all kudos" in title_after):
                 clicked_keys.add(key)
                 clicked_now += 1
-                log(f"STVARNI kudos kliknut #{clicked_now} u ovom krugu")
+                log(f"STVARNI kudos dan #{clicked_now} u ovom krugu")
             else:
-                log(f"Kandidat #{idx + 1} kliknut ali bez potvrđene promjene stanja")
+                log(
+                    f"Klik nije potvrđen: title_after='{title_after}', "
+                    f"unfilled_after={unfilled_after}, filled_after={filled_after}"
+                )
 
-        except Exception:
-            pass
+        except Exception as e:
+            log(f"Greška na gumbu #{i+1}: {e}")
 
     return clicked_now
 
@@ -200,7 +142,7 @@ def main():
 
             for round_num in range(8):
                 log(f"9. Počinje krug {round_num + 1}")
-                clicked_now = click_real_kudos(page, clicked_keys)
+                clicked_now = click_visible_kudos(page, clicked_keys)
                 total_clicked += clicked_now
                 log(f"10. Krug {round_num + 1} gotov, stvarno kliknuto {clicked_now}, ukupno {total_clicked}")
 
