@@ -1,35 +1,54 @@
-name: run-kudos-cron
+import time
+from playwright.sync_api import sync_playwright
 
-on:
-  workflow_dispatch:
-  schedule:
-    - cron: "0 9 * * *"
+def click_visible_kudos(page, clicked_keys):
+    buttons = page.locator("button[title*='kudos'], button[title*='Kudos']")
+    count = buttons.count()
+    clicked_now = 0
 
-jobs:
-  run-kudos:
-    runs-on: ubuntu-latest
+    for i in range(count):
+        try:
+            btn = buttons.nth(i)
+            text = btn.get_attribute("title") or ""
+            box = btn.bounding_box()
+            if not box:
+                continue
 
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+            key = f"{round(box['x'])}-{round(box['y'])}-{text}"
+            if key in clicked_keys:
+                continue
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
+            btn.click(timeout=3000)
+            clicked_keys.add(key)
+            clicked_now += 1
+            time.sleep(0.8)
+        except Exception:
+            pass
 
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+    return clicked_now
 
-      - name: Install Playwright Firefox
-        run: python -m playwright install firefox
+def main():
+    with sync_playwright() as p:
+        browser = p.firefox.launch(headless=True)
+        context = browser.new_context(storage_state="strava_state.json")
+        page = context.new_page()
 
-      - name: Restore Strava session
-        shell: bash
-        run: |
-          echo "${{ secrets.STRAVA_STATE_B64 }}" | base64 -d > strava_state.json
+        page.goto("https://www.strava.com/dashboard", wait_until="load")
+        time.sleep(5)
 
-      - name: Run kudos script
-        run: python give_kudos.py
+        clicked_keys = set()
+        total_clicked = 0
+
+        for round_num in range(8):
+            clicked_now = click_visible_kudos(page, clicked_keys)
+            total_clicked += clicked_now
+            print(f"Krug {round_num + 1}: kliknuto {clicked_now}, ukupno {total_clicked}")
+
+            page.mouse.wheel(0, 2200)
+            time.sleep(3)
+
+        print(f"Gotovo. Ukupno kliknuto kudosa: {total_clicked}")
+        browser.close()
+
+if __name__ == "__main__":
+    main()
