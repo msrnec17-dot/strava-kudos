@@ -30,32 +30,50 @@ def validate_state_file():
     log(f"2. STATE OK: cookies={len(data.get('cookies', []))}, origins={len(data.get('origins', []))}")
 
 def click_visible_kudos(page, clicked_keys):
-    log("7. Tražim kudos gumbe na trenutno vidljivom dijelu stranice")
-    buttons = page.locator("button[title*='kudos'], button[title*='Kudos']")
-    count = buttons.count()
-    log(f"8. Pronađeno gumba: {count}")
+    log("Tražim klikabilne kudos gumbe")
+
+    selectors = [
+        "button[title='Give Kudos']",
+        "button[aria-label='Give Kudos']",
+        "button[title*='Give Kudos']",
+        "button[aria-label*='Give Kudos']"
+    ]
 
     clicked_now = 0
 
-    for i in range(count):
-        try:
-            btn = buttons.nth(i)
-            title = btn.get_attribute("title") or ""
-            box = btn.bounding_box()
-            if not box:
-                continue
+    for selector in selectors:
+        buttons = page.locator(selector)
+        count = buttons.count()
+        log(f"Selector {selector} -> pronađeno {count}")
 
-            key = f"{round(box['x'])}-{round(box['y'])}-{title}"
-            if key in clicked_keys:
-                continue
+        for i in range(count):
+            try:
+                btn = buttons.nth(i)
 
-            btn.click(timeout=2000)
-            clicked_keys.add(key)
-            clicked_now += 1
-            log(f"9. Kliknut kudos #{clicked_now} u ovom krugu")
-            time.sleep(0.5)
-        except Exception:
-            pass
+                if not btn.is_visible():
+                    continue
+
+                if not btn.is_enabled():
+                    continue
+
+                box = btn.bounding_box()
+                if not box:
+                    continue
+
+                key = f"{selector}-{round(box['x'])}-{round(box['y'])}"
+                if key in clicked_keys:
+                    continue
+
+                btn.scroll_into_view_if_needed(timeout=2000)
+                time.sleep(0.3)
+                btn.click(timeout=3000, force=True)
+                clicked_keys.add(key)
+                clicked_now += 1
+                log(f"Kliknut kudos #{clicked_now} u ovom krugu")
+                time.sleep(0.8)
+
+            except Exception:
+                pass
 
     return clicked_now
 
@@ -77,7 +95,7 @@ def main():
 
             log("7. Idem na Strava dashboard")
             page.goto("https://www.strava.com/dashboard", wait_until="domcontentloaded", timeout=30000)
-            time.sleep(5)
+            time.sleep(6)
 
             current_url = page.url
             log(f"8. Trenutni URL: {current_url}")
@@ -88,15 +106,15 @@ def main():
             clicked_keys = set()
             total_clicked = 0
 
-            for round_num in range(5):
+            for round_num in range(8):
                 log(f"9. Počinje krug {round_num + 1}")
                 clicked_now = click_visible_kudos(page, clicked_keys)
                 total_clicked += clicked_now
                 log(f"10. Krug {round_num + 1} gotov, kliknuto {clicked_now}, ukupno {total_clicked}")
 
                 log("11. Scrollam dalje")
-                page.mouse.wheel(0, 1800)
-                time.sleep(2)
+                page.mouse.wheel(0, 2200)
+                time.sleep(3)
 
             log(f"12. GOTOVO. Ukupno kliknuto kudosa: {total_clicked}")
 
