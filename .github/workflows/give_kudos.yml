@@ -3,7 +3,9 @@ name: run-kudos
 on:
   workflow_dispatch:
   schedule:
+    - cron: "30 22 * * *"  # 00:30 CEST
     - cron: "30 0 * * *"   # 02:30 CEST
+    - cron: "0 4 * * *"    # 06:00 CEST
     - cron: "0 5 * * *"    # 07:00 CEST
     - cron: "30 6 * * *"   # 08:30 CEST
     - cron: "30 7 * * *"   # 09:30 CEST
