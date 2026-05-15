@@ -47,6 +47,8 @@ on:
 jobs:
   run-kudos:
     runs-on: ubuntu-22.04
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
       - name: Checkout repository
