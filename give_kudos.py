@@ -2,51 +2,52 @@ import time
 from playwright.sync_api import sync_playwright
 
 def click_visible_kudos(page, clicked_keys):
-    # Tražimo sve gumbe koji u naslovu imaju riječ 'kudos' (velikim ili malim slovom)
-    buttons = page.locator("button[title*='kudos'], button[title*='Kudos']")
+    # Strava najpouzdanije registrira klik na gumb sa data-testid atributom
+    # Tražimo sve gumbe kojima je testid "kudos_button"
+    buttons = page.locator("button[data-testid='kudos_button']")
     count = buttons.count()
     clicked_now = 0
 
     for i in range(count):
         try:
             btn = buttons.nth(i)
-            text = btn.get_attribute("title") or ""
+            # Provjeri postoji li 'aria-pressed' atribut. Ako je 'true', kudos je već dan.
+            # Kod nekih verzija UI-a koristi se aria-pressed, a kod nekih 'unfilled' u title-u.
+            is_pressed = btn.get_attribute("aria-pressed")
+            if is_pressed == "true":
+                continue
+                
             box = btn.bounding_box()
-            
-            # Ako gumb nije vidljiv na ekranu, preskoči
             if not box:
                 continue
 
-            # Generiramo jedinstveni ključ za gumb temeljen na poziciji
-            key = f"{round(box['x'])}-{round(box['y'])}-{text}"
+            # Generiramo jedinstveni ključ na osnovu koordinata
+            key = f"{round(box['x'])}-{round(box['y'])}"
             if key in clicked_keys:
                 continue
 
-            # 1. Hover (prelazak mišem preko gumba smanjuje šansu da Strava ignorira klik)
-            btn.hover()
+            # Skrolaj do elementa tako da sigurno bude u viewportu
+            btn.scroll_into_view_if_needed()
             time.sleep(0.5)
-            
-            # 2. Klik (sa simulacijom trajanja pritiska i force opcijom)
-            btn.click(force=True, delay=150, timeout=3000)
+
+            # Klikni u centar gumba (precizniji klik za SVG gumbe)
+            btn.click(force=True, delay=200)
             
             clicked_keys.add(key)
             clicked_now += 1
             
-            # 3. Malo dulja pauza da server stigne registrirati klik
-            time.sleep(1.5)
+            # Pričekaj 2 sekunde između klikova jer Strava filtrira brze zahtjeve
+            time.sleep(2)
             
         except Exception as e:
-            # U slučaju greške s pojedinim gumbom (npr. nestane sa stranice), samo idemo dalje
             print(f"Greška na gumbu {i}: {e}")
 
     return clicked_now
 
 def main():
     with sync_playwright() as p:
-        # headless=True ostaje za GitHub Actions
+        # Povećavamo viewport da izbjegnemo preklapanja elemenata (česti uzrok failed klikova na Stravi)
         browser = p.firefox.launch(headless=True)
-        
-        # OVO JE DODANO: fiksna velika rezolucija i User-Agent da Strava ne posumnja na bota
         context = browser.new_context(
             storage_state="strava_state.json",
             viewport={'width': 1920, 'height': 1080},
@@ -56,7 +57,9 @@ def main():
 
         print("Otvaram Stravu...")
         page.goto("https://www.strava.com/dashboard", wait_until="load")
-        time.sleep(8)  # Čekamo dulje da se sve slike i komponente učitaju na novoj rezoluciji
+        
+        # Pusti da se stranica do kraja izrenderira
+        time.sleep(10)
 
         clicked_keys = set()
         total_clicked = 0
@@ -67,11 +70,11 @@ def main():
             total_clicked += clicked_now
             print(f"Krug {round_num + 1}: kliknuto {clicked_now}, ukupno do sada: {total_clicked}")
 
-            # Scrollamo dolje za učitavanje novih objava
-            page.mouse.wheel(0, 2200)
-            time.sleep(4)
+            # Skrolamo za učitavanje starijih aktivnosti
+            page.mouse.wheel(0, 2500)
+            time.sleep(5)
 
-        print(f"Gotovo. Ukupno kliknuto kudosa: {total_clicked}")
+        print(f"Gotovo. Ukupno podijeljeno kudosa: {total_clicked}")
         browser.close()
 
 if __name__ == "__main__":
