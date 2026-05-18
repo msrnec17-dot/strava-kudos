@@ -24,6 +24,17 @@ def validate_state_file():
         raise ValueError("storage_state nema polja 'cookies' i 'origins'.")
     log(f"STATE OK: cookies={len(data.get('cookies', []))}, origins={len(data.get('origins', []))}")
 
+def dismiss_cookie_banner(page):
+    try:
+        # Strava cookie banner (ako se pojavi)
+        btn = page.locator("button.btn-accept-cookie-banner, .cookie-banner button, [data-testid='accept-cookies-button']").first
+        if btn.is_visible(timeout=2000):
+            btn.click()
+            time.sleep(1)
+            log("Uklonjen cookie banner.")
+    except Exception:
+        pass
+
 def get_btn_state(btn):
     try:
         title = (btn.get_attribute("title") or "").strip()
@@ -37,14 +48,6 @@ def get_btn_state(btn):
         return title, aria, btn.locator("svg[data-testid='unfilled_kudos']").count() > 0, btn.locator("svg[data-testid='filled_kudos']").count() > 0
     except:
         return title, aria, False, False
-
-def is_unfilled(btn):
-    _, _, unfilled, filled = get_btn_state(btn)
-    return unfilled and not filled
-
-def is_filled(btn):
-    _, _, unfilled, filled = get_btn_state(btn)
-    return filled or (not unfilled)
 
 def visible_candidates(page):
     buttons = page.locator("button[data-testid='kudos_button']")
@@ -88,18 +91,21 @@ def click_visible_unfilled(page, clicked_keys):
                 continue
 
             btn.scroll_into_view_if_needed(timeout=2000)
-            time.sleep(0.15)
+            time.sleep(0.3) # Malo duže čekanje da se UI smiri
 
             for attempt in range(3):
                 try:
+                    # Dodan hover prije klika da simuliramo ljudski mišem
+                    btn.hover()
+                    time.sleep(0.1)
                     btn.click(timeout=2500, force=(attempt > 0))
                     break
                 except Exception:
                     if attempt == 2:
                         raise
-                    time.sleep(0.2)
+                    time.sleep(0.5)
 
-            time.sleep(1.5 + random.uniform(0.1, 0.6))
+            time.sleep(1.5 + random.uniform(0.3, 0.8))
 
             title2, aria2, unfilled2, filled2 = get_btn_state(btn)
             if filled2 or (not unfilled2) or "View all kudos" in title2:
@@ -117,11 +123,12 @@ def scan_scroll_cycle(page, clicked_keys, cycles=10):
     total = 0
     for c in range(cycles):
         log(f"--- ciklus {c+1}/{cycles} ---")
+        dismiss_cookie_banner(page) # Za svaki slučaj
         clicked_now = click_visible_unfilled(page, clicked_keys)
         total += clicked_now
         log(f"Ciklus {c+1}: kliknuto {clicked_now}, ukupno {total}")
         page.mouse.wheel(0, 1600)
-        time.sleep(2.2 + random.uniform(0.2, 0.8))
+        time.sleep(2.5 + random.uniform(0.5, 1.2))
     return total
 
 def final_sweep(page, clicked_keys, rounds=3):
@@ -131,7 +138,7 @@ def final_sweep(page, clicked_keys, rounds=3):
         clicked_now = click_visible_unfilled(page, clicked_keys)
         total += clicked_now
         log(f"Final sweep {r+1}: kliknuto {clicked_now}, ukupno {total}")
-        time.sleep(1.2)
+        time.sleep(1.5)
     return total
 
 def main():
@@ -140,15 +147,22 @@ def main():
 
         with sync_playwright() as p:
             browser = p.firefox.launch(headless=True)
-            context = browser.new_context(storage_state=STATE_FILE, viewport={"width": 1440, "height": 1200})
+            # Postavili smo user agent da izgleda više kao normalan korisnik
+            context = browser.new_context(
+                storage_state=STATE_FILE, 
+                viewport={"width": 1440, "height": 1200},
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0"
+            )
             page = context.new_page()
             page.set_default_timeout(10000)
 
             page.goto(FEED_URL, wait_until="domcontentloaded", timeout=30000)
-            time.sleep(6)
+            time.sleep(8) # Povećano vrijeme čekanja na početku
 
             if "login" in page.url.lower():
                 raise RuntimeError("Session nije valjan, otvorena je login stranica.")
+
+            dismiss_cookie_banner(page)
 
             clicked_keys = set()
             total_clicked = 0
@@ -158,7 +172,7 @@ def main():
 
             log("Vraćam se malo gore za dodatni sweep")
             page.mouse.wheel(0, -2500)
-            time.sleep(2.5)
+            time.sleep(3)
 
             total_clicked += final_sweep(page, clicked_keys, rounds=5)
 
