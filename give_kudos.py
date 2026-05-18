@@ -2,6 +2,9 @@ import time
 from playwright.sync_api import sync_playwright
 
 
+MAX_KUDOS = 60  # maksimalno kudosa po jednom pokretanju
+
+
 def main():
     with sync_playwright() as p:
         # Firefox u headless modu za GitHub Actions
@@ -18,11 +21,15 @@ def main():
 
         total_clicked = 0
 
-        # Nekoliko krugova: u svakom krugu kliknemo sve vidljive gumbe pa skrolamo dolje
+        # Nekoliko krugova: u svakom krugu kliknemo vidljive gumbe pa skrolamo dolje
+        stop = False
         for round_num in range(6):
+            if stop:
+                break
+
             print(f"Krug {round_num + 1} – tražim kudose...")
 
-            # Jednostavan selektor po naslovu gumba, kao u starim skriptama
+            # Jednostavan selektor po naslovu gumba
             buttons = page.locator(
                 "button[title='Give kudos'], button[title='Be the first to give kudos!']"
             )
@@ -30,14 +37,25 @@ def main():
             print(f"Našao {count} kudos gumba")
 
             for i in range(count):
+                if total_clicked >= MAX_KUDOS:
+                    print(
+                        f"Dosegnut limit od {MAX_KUDOS} kudosa u ovom runu – prekidam."
+                    )
+                    stop = True
+                    break
+
                 try:
                     btn = buttons.nth(i)
                     btn.click(timeout=3000)
                     total_clicked += 1
-                    print(f"  Kliknuo gumb {i + 1}")
+                    print(f"  Kliknuo gumb {i + 1} (ukupno: {total_clicked})")
                     time.sleep(1.0)  # kratka pauza između klikova
                 except Exception as e:
                     print(f"  Preskačem gumb {i + 1} (greška: {e})")
+
+            # Ako smo dosegnuli limit, nema potrebe skrolati dalje
+            if stop:
+                break
 
             # Skrolamo dolje da se učitaju nove aktivnosti
             page.mouse.wheel(0, 2200)
