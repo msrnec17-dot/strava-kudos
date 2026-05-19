@@ -1,84 +1,114 @@
 import csv
-from collections import Counter
+from collections import Counter, defaultdict
 from pathlib import Path
-import os
-import urllib.request
-import urllib.parse
 
 LOG_PATH = Path("output/kudos_log.csv")
-REPORT_PATH = Path("output/daily_kudos_top20.txt")
 
 
-def load_counts():
-    counts = Counter()
-
+def load_rows():
     if not LOG_PATH.exists():
-        return counts
+        return []
 
-    with LOG_PATH.open("r", encoding="utf-8", newline="") as f:
+    with LOG_PATH.open("r", newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
-        for row in reader:
-            name = (row.get("user") or "").strip()
-            if name:
-                counts[name] += 1
-
-    return counts
+        return list(reader)
 
 
-def format_report(counts):
-    total = sum(counts.values())
-    unique = len(counts)
-    top20 = counts.most_common(20)
-
-    lines = []
-    lines.append("Dnevna analiza kudosa")
-    lines.append(f"Ukupno dodijeljeno kudosa: {total}")
-    lines.append(f"Broj korisnika: {unique}")
-    lines.append("")
-    lines.append("Top 20 korisnika:")
-
-    if top20:
-        for idx, (name, count) in enumerate(top20, start=1):
-            lines.append(f"{idx}. {name} - {count}")
-    else:
-        lines.append("Nema podataka.")
-
-    return "\n".join(lines)
-
-
-def send_telegram(message):
-    tel_token = os.environ.get("TELEGRAM_TOKEN")
-    tel_chat_id = os.environ.get("TELEGRAM_CHAT_ID")
-
-    if not tel_token or not tel_chat_id:
-        print("Telegram token/chat id nisu postavljeni.")
+def print_status_block(title, counter):
+    print(title)
+    if not counter:
+        print("  (nema podataka)")
         return
 
-    url = f"https://api.telegram.org/bot{tel_token}/sendMessage"
-    data = urllib.parse.urlencode(
-        {
-            "chat_id": tel_chat_id,
-            "text": message,
-        }
-    ).encode("utf-8")
-
-    urllib.request.urlopen(url, data=data, timeout=10)
+    for key, value in counter.most_common():
+        print(f"  - {key}: {value}")
 
 
 def main():
-    counts = load_counts()
-    report = format_report(counts)
+    rows = load_rows()
 
-    REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    REPORT_PATH.write_text(report, encoding="utf-8")
+    print("ANALIZA KUDOS LOGA")
+    print("==================")
 
-    print(report)
+    if not rows:
+        print("Nema podataka.")
+        return
 
-    try:
-        send_telegram(report)
-        print("Telegram analiza poslana.")
-    except Exception as e:
-        print(f"Greška pri slanju Telegram analize: {e}")
+    total_rows = len(rows)
+    status_counter = Counter()
+    user_counter = Counter()
+    details_counter = Counter()
+    system_counter = Counter()
+    user_status_counter = defaultdict(Counter)
+
+    for row in rows:
+        timestamp = (row.get("timestamp") or "").strip()
+        user = (row.get("user") or "UNKNOWN_USER").strip()
+        status = (row.get("status") or "unknown").strip()
+        details = (row.get("details") or "").strip()
+
+        status_counter[status] += 1
+        details_counter[details] += 1
+
+        if user == "SYSTEM":
+            system_counter[status] += 1
+        else:
+            user_counter[user] += 1
+            user_status_counter[user][status] += 1
+
+    clicked_count = status_counter.get("clicked", 0)
+    no_click_runs = system_counter.get("no_clicks", 0)
+    summary_runs = system_counter.get("summary", 0)
+
+    print(f"Ukupno redaka u logu: {total_rows}")
+    print(f"Ukupno kliknutih kudosa: {clicked_count}")
+    print(f"Broj runova bez klikova: {no_click_runs}")
+    print(f"Broj runova sa summary zapisom: {summary_runs}")
+    print()
+
+    print_status_block("Statusi", status_counter)
+    print()
+
+    top_users = user_counter.most_common(10)
+    print("Top 10 korisnika po broju zapisa")
+    if not top_users:
+        print("  (nema korisničkih zapisa)")
+    else:
+        for user, count in top_users:
+            status_parts = ", ".join(
+                f"{status}={value}"
+                for status, value in user_status_counter[user].most_common()
+            )
+            print(f"  - {user}: {count} zapisa ({status_parts})")
+    print()
+
+    interesting_statuses = [
+        "click_not_confirmed",
+        "click_error",
+        "disabled",
+        "no_button",
+        "already_kudoed",
+        "unknown_button_state",
+    ]
+
+    print("Detalji po problematičnim statusima")
+    has_any_problem = False
+    for status_name in interesting_statuses:
+        count = status_counter.get(status_name, 0)
+        if count > 0:
+            has_any_problem = True
+            print(f"  - {status_name}: {count}")
+    if not has_any_problem:
+        print("  (nema problematičnih statusa)")
+    print()
+
+    top_details = [(k, v) for k, v in details_counter.most_common(10) if k]
+    print("Top 10 detail poruka")
+    if not top_details:
+        print("  (nema detail poruka)")
+    else:
+        for detail, count in top_details:
+            print(f"  - {count}x {detail}")
 
 
 if __name__ == "__main__":
