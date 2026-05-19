@@ -1,10 +1,11 @@
 import time
 import random
+import os
+import urllib.request
+import urllib.parse
 from playwright.sync_api import sync_playwright
 
-# Maksimalan broj kudosa po jednom pokretanju skripte
 MAX_KUDOS = 60
-
 
 def main():
     print("POČETAK SKRIPTE")
@@ -28,7 +29,6 @@ def main():
         print("Otvaram Strava dashboard...")
         page.goto("https://www.strava.com/dashboard", wait_until="networkidle")
 
-        # Kraće početno čekanje – i dalje malo nasumično
         pause = random.uniform(4.0, 6.0)
         print(f"Čekam {pause:.1f} s da se feed učita...")
         time.sleep(pause)
@@ -36,7 +36,6 @@ def main():
         total_clicked = 0
         stop = False
 
-        # 6 krugova skrolanja
         for round_num in range(6):
             if stop:
                 break
@@ -52,38 +51,21 @@ def main():
 
             for i in range(count):
                 if total_clicked >= MAX_KUDOS:
-                    print(
-                        f"Dosegnut sigurni limit od {MAX_KUDOS} kudosa "
-                        "u ovom runu – prekidam."
-                    )
+                    print(f"Dosegnut sigurni limit od {MAX_KUDOS} kudosa u ovom runu – prekidam.")
                     stop = True
                     break
 
                 try:
                     btn = buttons.nth(i)
-
-                    # Kratko "gledanje" aktivnosti prije klika
                     pre_pause = random.uniform(0.8, 2.0)
-                    print(
-                        f"  Pripremam klik na gumb {i + 1}, "
-                        f"čekam {pre_pause:.1f} s..."
-                    )
                     btn.scroll_into_view_if_needed()
                     time.sleep(pre_pause)
 
-                    # Klik na kudos
                     btn.click(timeout=3000)
                     total_clicked += 1
-                    print(
-                        f"  Kliknuo gumb {i + 1} "
-                        f"(ukupno kliknuto: {total_clicked})"
-                    )
+                    print(f"  Kliknuo gumb {i + 1} (ukupno kliknuto: {total_clicked})")
 
-                    # Kratka pauza nakon klika
                     post_pause = random.uniform(1.0, 3.0)
-                    print(
-                        f"  Pauza nakon klika {post_pause:.1f} s prije sljedećeg..."
-                    )
                     time.sleep(post_pause)
 
                 except Exception as e:
@@ -93,20 +75,28 @@ def main():
                 break
 
             scroll_amount = random.randint(1000, 1800)
-            print(
-                f"Kraj kruga {round_num + 1}, skrolam za {scroll_amount} px "
-                "i čekam da se učita novi sadržaj..."
-            )
             page.mouse.wheel(0, scroll_amount)
-
             scroll_pause = random.uniform(2.0, 4.0)
             time.sleep(scroll_pause)
 
         print(f"\nGotovo. Ukupno kliknuto kudosa: {total_clicked}")
-        print("Zatvaram browser...")
         browser.close()
+        
+        # Slanje obavijesti na Telegram
+        tel_token = os.environ.get("TELEGRAM_TOKEN")
+        tel_chat_id = os.environ.get("TELEGRAM_CHAT_ID")
+        
+        if tel_token and tel_chat_id:
+            message = f"Strava bot je završio provjeru!\nPodijeljeno novih kudosa: {total_clicked} 🚴‍♂️🔥"
+            try:
+                url = f"https://api.telegram.org/bot{tel_token}/sendMessage"
+                data = urllib.parse.urlencode({'chat_id': tel_chat_id, 'text': message}).encode('utf-8')
+                urllib.request.urlopen(url, data=data, timeout=5)
+                print("Telegram izvješće uspješno poslano na mobitel!")
+            except Exception as e:
+                print(f"Greška pri slanju Telegram poruke: {e}")
+                
         print("KRAJ SKRIPTE")
-
 
 if __name__ == "__main__":
     main()
