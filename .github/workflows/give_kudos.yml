@@ -3,13 +3,13 @@ name: run-kudos
 on:
   workflow_dispatch:
   schedule:
-    # Vremena su u UTC (što je 2 sata manje od našeg trenutnog vremena - CEST)
-    - cron: "30 5 * * *"   # 07:30 CEST (Ranojutarnji treninzi)
-    - cron: "30 7 * * *"   # 09:30 CEST (Kasniji jutarnji treninzi / dolazak na posao)
-    - cron: "30 11 * * *"  # 13:30 CEST (Pauza za ručak)
-    - cron: "30 15 * * *"  # 17:30 CEST (Nakon posla)
-    - cron: "30 17 * * *"  # 19:30 CEST (Glavni večernji treninzi)
-    - cron: "30 19 * * *"  # 21:30 CEST (Završetak dana)
+    # Vremena su u UTC (oko +2 sata za CEST)
+    - cron: "30 5 * * *"   # 07:30 CEST (rano ujutro)
+    - cron: "30 7 * * *"   # 09:30 CEST (jutarnje aktivnosti)
+    - cron: "30 11 * * *"  # 13:30 CEST (pauza za ručak)
+    - cron: "30 15 * * *"  # 17:30 CEST (nakon posla)
+    - cron: "30 17 * * *"  # 19:30 CEST (glavni večernji treninzi)
+    - cron: "30 19 * * *"  # 21:30 CEST (kraj dana)
 
 jobs:
   run-kudos:
@@ -52,3 +52,5 @@ jobs:
 
       - name: Run kudos script
         run: python -u give_kudos.py
+        env:
+          PYTHONUNBUFFERED: "1"
