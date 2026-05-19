@@ -74,22 +74,15 @@ def send_telegram_report(total_clicked, kudos_names):
             if name not in unique_names:
                 unique_names.append(name)
 
-        if len(unique_names) > 30:
-            names_str = "\n".join(f"- {name}" for name in unique_names[:30])
-            names_str += f"\n... i još {len(unique_names) - 30} osoba"
-        else:
-            names_str = "\n".join(f"- {name}" for name in unique_names)
+        names_str = ", ".join(unique_names)
 
         message = (
-            f"Strava bot je završio.\n\n"
-            f"Podijeljeno kudosa: {total_clicked}\n\n"
-            f"Kudose su dobili:\n{names_str}"
+            f"Strava bot je završio | "
+            f"Podijeljeno kudosa: {total_clicked} | "
+            f"Korisnici: {names_str}"
         )
     else:
-        message = (
-            "Strava bot je završio.\n\n"
-            "Nije pronađena nijedna nova aktivnost za kudos."
-        )
+        message = "Strava bot je završio | Nije pronađena nijedna nova aktivnost za kudos."
 
     try:
         url = f"https://api.telegram.org/bot{tel_token}/sendMessage"
