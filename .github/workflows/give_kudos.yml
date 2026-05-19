@@ -4,12 +4,16 @@ on:
   workflow_dispatch:
   schedule:
     # Vremena su u UTC (oko +2 sata za CEST)
-    - cron: "30 5 * * *"   # 07:30 CEST (rano ujutro)
-    - cron: "30 7 * * *"   # 09:30 CEST (jutarnje aktivnosti)
-    - cron: "30 11 * * *"  # 13:30 CEST (pauza za ručak)
-    - cron: "30 15 * * *"  # 17:30 CEST (nakon posla)
-    - cron: "30 17 * * *"  # 19:30 CEST (glavni večernji treninzi)
-    - cron: "30 19 * * *"  # 21:30 CEST (kraj dana)
+    - cron: "0 4 * * *"    # 06:00 CEST (rano ujutro)
+    - cron: "0 6 * * *"    # 08:00 CEST (jutro)
+    - cron: "0 8 * * *"    # 10:00 CEST (prijepodne)
+    - cron: "0 10 * * *"   # 12:00 CEST (podne)
+    - cron: "0 12 * * *"   # 14:00 CEST (rano poslijepodne)
+    - cron: "0 14 * * *"   # 16:00 CEST (poslijepodne)
+    - cron: "0 16 * * *"   # 18:00 CEST (predvečer)
+    - cron: "0 18 * * *"   # 20:00 CEST (večer)
+    - cron: "0 20 * * *"   # 22:00 CEST (kasna večer)
+    - cron: "30 21 * * *"  # 23:30 CEST (kraj dana)
 
 jobs:
   run-kudos:
