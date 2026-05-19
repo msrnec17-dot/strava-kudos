@@ -21,29 +21,15 @@ def clean_name(text):
     return text
 
 
-def get_athlete_name_from_button(btn):
-    card = btn.locator(
-        "xpath=ancestor::*["
-        "contains(@class, 'react-card') or "
-        "contains(@class, 'feed-entry') or "
-        "contains(@class, 'FeedEntry') or "
-        "self::article"
-        "][1]"
-    )
-
-    candidate_selectors = [
+def get_card_name(card):
+    name_selectors = [
         "a[data-testid='owners-name']",
-        "header a[data-testid='owners-name']",
         "a[href*='/athletes/']",
+        "header a[data-testid='owners-name']",
         "header a[href*='/athletes/']",
-        ".entry-owner",
-        ".minimal-user",
-        ".avatar-athlete-name",
-        "strong a",
-        "h3 a",
     ]
 
-    for selector in candidate_selectors:
+    for selector in name_selectors:
         try:
             loc = card.locator(selector).first
             if loc.count() > 0:
@@ -53,29 +39,25 @@ def get_athlete_name_from_button(btn):
         except Exception:
             pass
 
-    fallback_selectors = [
-        "header",
-        ".entry-head",
-        ".activity-header",
-        ".feed-entry__header",
-        "h3",
-        "strong",
+    return "Nepoznato ime"
+
+
+def get_card_kudos_button(card):
+    button_selectors = [
+        "[data-testid='kudos_button']",
+        "button[title='Give kudos']",
+        "button[title='Be the first to give kudos!']",
     ]
 
-    for selector in fallback_selectors:
+    for selector in button_selectors:
         try:
             loc = card.locator(selector).first
             if loc.count() > 0:
-                txt = clean_name(loc.inner_text(timeout=1000))
-                if txt:
-                    first_line = txt.split("\n")[0].strip()
-                    first_line = clean_name(first_line)
-                    if first_line:
-                        return first_line
+                return loc
         except Exception:
             pass
 
-    return "Nepoznato ime"
+    return None
 
 
 def send_telegram_report(total_clicked, kudos_names):
@@ -155,54 +137,93 @@ def main():
             if stop:
                 break
 
-            print(f"\nKrug {round_num + 1} – tražim kudose...")
+            print(f"\nKrug {round_num + 1} – tražim aktivnosti...")
 
-            buttons = page.locator(
-                "button[title='Give kudos'], "
-                "button[title='Be the first to give kudos!']"
-            )
-            count = buttons.count()
-            print(f"Našao {count} kudos gumba u ovom krugu")
+            card_selectors = [
+                "[data-testid='web-feed-entry']",
+                "article",
+                ".react-card",
+                ".feed-entry",
+            ]
 
-            for i in range(count):
+            cards = None
+            card_count = 0
+
+            for selector in card_selectors:
+                try:
+                    loc = page.locator(selector)
+                    count = loc.count()
+                    if count > 0:
+                        cards = loc
+                        card_count = count
+                        print(f"Našao {count} aktivnosti preko selektora: {selector}")
+                        break
+                except Exception:
+                    pass
+
+            if not cards or card_count == 0:
+                print("Nisam našao nijednu aktivnost u feedu.")
+                break
+
+            for i in range(card_count):
                 if total_clicked >= MAX_KUDOS:
                     print(f"Dosegnut limit od {MAX_KUDOS} kudosa – prekidam.")
                     stop = True
                     break
 
                 try:
-                    btn = buttons.nth(i)
-                    btn.scroll_into_view_if_needed()
+                    card = cards.nth(i)
+                    card.scroll_into_view_if_needed()
+                    time.sleep(random.uniform(0.5, 1.2))
 
-                    pre_pause = random.uniform(0.8, 2.0)
+                    athlete_name = get_card_name(card)
+                    btn = get_card_kudos_button(card)
+
+                    if btn is None:
+                        print(f"  Aktivnost {i + 1}: nema dostupnog kudos gumba.")
+                        continue
+
+                    try:
+                        aria_pressed = btn.get_attribute("aria-pressed")
+                        if aria_pressed == "true":
+                            print(f"  Aktivnost {i + 1}: {athlete_name} već ima kudos.")
+                            continue
+                    except Exception:
+                        pass
+
+                    try:
+                        button_title = btn.get_attribute("title") or ""
+                        if "Give kudos" not in button_title and "Be the first to give kudos!" not in button_title:
+                            print(f"  Aktivnost {i + 1}: kudos gumb nije aktivan za {athlete_name}.")
+                            continue
+                    except Exception:
+                        pass
+
+                    pre_pause = random.uniform(0.8, 1.8)
                     time.sleep(pre_pause)
-
-                    athlete_name = get_athlete_name_from_button(btn)
 
                     btn.click(timeout=3000)
                     total_clicked += 1
                     kudos_names.append(athlete_name)
 
                     print(
-                        f"  Kliknuo gumb {i + 1} za: {athlete_name} "
+                        f"  Kliknuo kudos za: {athlete_name} "
                         f"(ukupno kliknuto: {total_clicked})"
                     )
 
-                    post_pause = random.uniform(1.0, 3.0)
+                    post_pause = random.uniform(1.0, 2.5)
                     time.sleep(post_pause)
 
                 except Exception as e:
-                    print(f"  Preskačem gumb {i + 1} (greška: {e})")
+                    print(f"  Preskačem aktivnost {i + 1} (greška: {e})")
 
             if stop:
                 break
 
-            scroll_amount = random.randint(1000, 1800)
+            scroll_amount = random.randint(1200, 2200)
             print(f"Kraj kruga {round_num + 1}, skrolam za {scroll_amount} px...")
             page.mouse.wheel(0, scroll_amount)
-
-            scroll_pause = random.uniform(2.0, 4.0)
-            time.sleep(scroll_pause)
+            time.sleep(random.uniform(2.0, 4.0))
 
         print(f"\nGotovo. Ukupno kliknuto kudosa: {total_clicked}")
         browser.close()
