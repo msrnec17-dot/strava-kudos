@@ -8,7 +8,7 @@ import urllib.parse
 from playwright.sync_api import sync_playwright
 
 MAX_KUDOS = 60
-LOG_PATH = Path('output/kudos_log.csv')
+LOG_PATH = Path("output/kudos_log.csv")
 
 
 def clean_name(text):
@@ -16,8 +16,14 @@ def clean_name(text):
         return ""
     text = " ".join(text.split()).strip()
     bad_values = {
-        "", "give kudos", "be the first to give kudos!", "kudos",
-        "comment", "share", "more", "view all comments"
+        "",
+        "give kudos",
+        "be the first to give kudos!",
+        "kudos",
+        "comment",
+        "share",
+        "more",
+        "view all comments",
     }
     if text.lower() in bad_values:
         return ""
@@ -31,6 +37,7 @@ def get_card_name(card):
         "header a[data-testid='owners-name']",
         "header a[href*='/athletes/']",
     ]
+
     for selector in name_selectors:
         try:
             loc = card.locator(selector).first
@@ -40,6 +47,7 @@ def get_card_name(card):
                     return txt
         except Exception:
             pass
+
     return "Nepoznato ime"
 
 
@@ -49,6 +57,7 @@ def get_card_kudos_button(card):
         "button[title='Give kudos']",
         "button[title='Be the first to give kudos!']",
     ]
+
     for selector in button_selectors:
         try:
             loc = card.locator(selector).first
@@ -56,24 +65,27 @@ def get_card_kudos_button(card):
                 return loc
         except Exception:
             pass
+
     return None
 
 
 def append_to_log(name, ts):
     LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    exists = LOG_PATH.exists()
-    with LOG_PATH.open('a', newline='', encoding='utf-8') as f:
-        w = csv.writer(f)
-        if not exists:
-            w.writerow(['timestamp', 'user'])
-        w.writerow([ts, name])
+    file_exists = LOG_PATH.exists()
+
+    with LOG_PATH.open("a", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        if not file_exists:
+            writer.writerow(["timestamp", "user"])
+        writer.writerow([ts, name])
 
 
 def send_telegram_report(total_clicked, kudos_names):
-    tel_token = os.environ.get('TELEGRAM_TOKEN')
-    tel_chat_id = os.environ.get('TELEGRAM_CHAT_ID')
+    tel_token = os.environ.get("TELEGRAM_TOKEN")
+    tel_chat_id = os.environ.get("TELEGRAM_CHAT_ID")
+
     if not tel_token or not tel_chat_id:
-        print('Telegram token/chat id nisu postavljeni.')
+        print("Telegram token/chat id nisu postavljeni.")
         return
 
     if total_clicked > 0:
@@ -81,41 +93,56 @@ def send_telegram_report(total_clicked, kudos_names):
         for name in kudos_names:
             if name not in unique_names:
                 unique_names.append(name)
-        names_str = ', '.join(unique_names)
-        message = f'Strava bot je završio | Podijeljeno kudosa: {total_clicked} | Korisnici: {names_str}'
+
+        names_str = ", ".join(unique_names)
+
+        message = (
+            f"Strava bot je završio | "
+            f"Podijeljeno kudosa: {total_clicked} | "
+            f"Korisnici: {names_str}"
+        )
     else:
-        message = 'Strava bot je završio | Nije pronađena nijedna nova aktivnost za kudos.'
+        message = "Strava bot je završio | Nije pronađena nijedna nova aktivnost za kudos."
 
     try:
-        url = f'https://api.telegram.org/bot{tel_token}/sendMessage'
-        data = urllib.parse.urlencode({'chat_id': tel_chat_id, 'text': message}).encode('utf-8')
+        url = f"https://api.telegram.org/bot{tel_token}/sendMessage"
+        data = urllib.parse.urlencode(
+            {
+                "chat_id": tel_chat_id,
+                "text": message,
+            }
+        ).encode("utf-8")
         urllib.request.urlopen(url, data=data, timeout=10)
-        print('Telegram izvješće uspješno poslano.')
+        print("Telegram izvješće uspješno poslano.")
     except Exception as e:
-        print(f'Greška pri slanju Telegram poruke: {e}')
+        print(f"Greška pri slanju Telegram poruke: {e}")
 
 
 def main():
-    print('POČETAK SKRIPTE')
+    print("POČETAK SKRIPTE")
     kudos_names = []
 
     with sync_playwright() as p:
-        print('Pokrećem Firefox (headless)...')
+        print("Pokrećem Firefox (headless)...")
         browser = p.firefox.launch(headless=True)
-        print('Kreiram Strava kontekst sa strava_state.json...')
+
+        print("Kreiram Strava kontekst sa strava_state.json...")
         context = browser.new_context(
-            storage_state='strava_state.json',
-            viewport={'width': 1920, 'height': 1080},
+            storage_state="strava_state.json",
+            viewport={"width": 1920, "height": 1080},
             user_agent=(
-                'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:110.0) '
-                'Gecko/20100101 Firefox/110.0'
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:110.0) "
+                "Gecko/20100101 Firefox/110.0"
             ),
         )
+
         page = context.new_page()
-        print('Otvaram Strava dashboard...')
-        page.goto('https://www.strava.com/dashboard', wait_until='networkidle')
+
+        print("Otvaram Strava dashboard...")
+        page.goto("https://www.strava.com/dashboard", wait_until="networkidle")
+
         pause = random.uniform(4.0, 6.0)
-        print(f'Čekam {pause:.1f} s da se feed učita...')
+        print(f"Čekam {pause:.1f} s da se feed učita...")
         time.sleep(pause)
 
         total_clicked = 0
@@ -124,16 +151,19 @@ def main():
         for round_num in range(3):
             if stop:
                 break
-            print(f'
-Krug {round_num + 1} – tražim aktivnosti...')
+
+            print(f"Krug {round_num + 1} – tražim aktivnosti...")
+
             card_selectors = [
                 "[data-testid='web-feed-entry']",
-                'article',
-                '.react-card',
-                '.feed-entry',
+                "article",
+                ".react-card",
+                ".feed-entry",
             ]
+
             cards = None
             card_count = 0
+
             for selector in card_selectors:
                 try:
                     loc = page.locator(selector)
@@ -141,66 +171,85 @@ Krug {round_num + 1} – tražim aktivnosti...')
                     if count > 0:
                         cards = loc
                         card_count = count
-                        print(f'Našao {count} aktivnosti preko selektora: {selector}')
+                        print(f"Našao {count} aktivnosti preko selektora: {selector}")
                         break
                 except Exception:
                     pass
+
             if not cards or card_count == 0:
-                print('Nisam našao nijednu aktivnost u feedu.')
+                print("Nisam našao nijednu aktivnost u feedu.")
                 break
 
             for i in range(card_count):
                 if total_clicked >= MAX_KUDOS:
-                    print(f'Dosegnut limit od {MAX_KUDOS} kudosa – prekidam.')
+                    print(f"Dosegnut limit od {MAX_KUDOS} kudosa – prekidam.")
                     stop = True
                     break
+
                 try:
                     card = cards.nth(i)
                     card.scroll_into_view_if_needed()
                     time.sleep(random.uniform(0.5, 1.2))
+
                     athlete_name = get_card_name(card)
                     btn = get_card_kudos_button(card)
+
                     if btn is None:
-                        print(f'  Aktivnost {i + 1}: nema dostupnog kudos gumba.')
+                        print(f"Aktivnost {i + 1}: nema dostupnog kudos gumba.")
                         continue
+
                     try:
-                        aria_pressed = btn.get_attribute('aria-pressed')
-                        if aria_pressed == 'true':
-                            print(f'  Aktivnost {i + 1}: {athlete_name} već ima kudos.')
+                        aria_pressed = btn.get_attribute("aria-pressed")
+                        if aria_pressed == "true":
+                            print(f"Aktivnost {i + 1}: {athlete_name} već ima kudos.")
                             continue
                     except Exception:
                         pass
+
                     try:
-                        button_title = btn.get_attribute('title') or ''
-                        if 'Give kudos' not in button_title and 'Be the first to give kudos!' not in button_title:
-                            print(f'  Aktivnost {i + 1}: kudos gumb nije aktivan za {athlete_name}.')
+                        button_title = btn.get_attribute("title") or ""
+                        if (
+                            "Give kudos" not in button_title
+                            and "Be the first to give kudos!" not in button_title
+                        ):
+                            print(
+                                f"Aktivnost {i + 1}: kudos gumb nije aktivan za {athlete_name}."
+                            )
                             continue
                     except Exception:
                         pass
+
                     time.sleep(random.uniform(0.8, 1.8))
+
                     btn.click(timeout=3000)
                     total_clicked += 1
                     kudos_names.append(athlete_name)
-                    append_to_log(athlete_name, time.strftime('%Y-%m-%dT%H:%M:%S'))
-                    print(f'  Kliknuo kudos za: {athlete_name} (ukupno kliknuto: {total_clicked})')
+                    append_to_log(athlete_name, time.strftime("%Y-%m-%dT%H:%M:%S"))
+
+                    print(
+                        f"Kliknuo kudos za: {athlete_name} "
+                        f"(ukupno kliknuto: {total_clicked})"
+                    )
+
                     time.sleep(random.uniform(1.0, 2.5))
+
                 except Exception as e:
-                    print(f'  Preskačem aktivnost {i + 1} (greška: {e})')
+                    print(f"Preskačem aktivnost {i + 1} (greška: {e})")
 
             if stop:
                 break
+
             scroll_amount = random.randint(1200, 2200)
-            print(f'Kraj kruga {round_num + 1}, skrolam za {scroll_amount} px...')
+            print(f"Kraj kruga {round_num + 1}, skrolam za {scroll_amount} px...")
             page.mouse.wheel(0, scroll_amount)
             time.sleep(random.uniform(2.0, 4.0))
 
-        print(f'
-Gotovo. Ukupno kliknuto kudosa: {total_clicked}')
+        print(f"Gotovo. Ukupno kliknuto kudosa: {total_clicked}")
         browser.close()
 
     send_telegram_report(total_clicked, kudos_names)
-    print('KRAJ SKRIPTE')
+    print("KRAJ SKRIPTE")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
