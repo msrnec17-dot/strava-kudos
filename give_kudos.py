@@ -7,11 +7,13 @@ MAX_KUDOS = 60
 
 
 def main():
+    print("POČETAK SKRIPTE")
+
     with sync_playwright() as p:
-        # Firefox u headless modu za GitHub Actions
+        print("Pokrećem Firefox (headless)...")
         browser = p.firefox.launch(headless=True)
 
-        # Kontekst sa snimljenom Strava sesijom
+        print("Kreiram Strava kontekst sa strava_state.json...")
         context = browser.new_context(
             storage_state="strava_state.json",
             viewport={"width": 1920, "height": 1080},
@@ -20,31 +22,33 @@ def main():
                 "Gecko/20100101 Firefox/110.0"
             ),
         )
+
         page = context.new_page()
 
         print("Otvaram Strava dashboard...")
         page.goto("https://www.strava.com/dashboard", wait_until="networkidle")
 
-        # Početno nasumično čekanje – kao da prvo malo gledaš feed
-        time.sleep(random.uniform(7.0, 12.0))
+        # Kraće početno čekanje – i dalje malo nasumično
+        pause = random.uniform(4.0, 6.0)
+        print(f"Čekam {pause:.1f} s da se feed učita...")
+        time.sleep(pause)
 
         total_clicked = 0
         stop = False
 
-        # Prolazimo kroz nekoliko krugova skrolanja po feedu
-        for round_num in range(3):
+        # 2 kruga skrolanja – dovoljno brzo, a opet prođe nešto feeda
+        for round_num in range(2):
             if stop:
                 break
 
-            print(f"Krug {round_num + 1} – tražim kudose...")
+            print(f"\nKrug {round_num + 1} – tražim kudose...")
 
-            # Gumbi za davanje kudosa
             buttons = page.locator(
                 "button[title='Give kudos'], "
                 "button[title='Be the first to give kudos!']"
             )
             count = buttons.count()
-            print(f"Našao {count} kudos gumba")
+            print(f"Našao {count} kudos gumba u ovom krugu")
 
             for i in range(count):
                 if total_clicked >= MAX_KUDOS:
@@ -58,9 +62,14 @@ def main():
                 try:
                     btn = buttons.nth(i)
 
-                    # Malo skrolaj do gumba i "čitaj" aktivnost prije klika
+                    # Kratko "gledanje" aktivnosti prije klika
+                    pre_pause = random.uniform(0.8, 2.0)
+                    print(
+                        f"  Pripremam klik na gumb {i + 1}, "
+                        f"čekam {pre_pause:.1f} s..."
+                    )
                     btn.scroll_into_view_if_needed()
-                    time.sleep(random.uniform(1.5, 4.5))
+                    time.sleep(pre_pause)
 
                     # Klik na kudos
                     btn.click(timeout=3000)
@@ -70,8 +79,12 @@ def main():
                         f"(ukupno kliknuto: {total_clicked})"
                     )
 
-                    # Pauza nakon klika, kao da gledaš sljedeću aktivnost
-                    time.sleep(random.uniform(2.0, 6.0))
+                    # Kratka pauza nakon klika
+                    post_pause = random.uniform(1.0, 3.0)
+                    print(
+                        f"  Pauza nakon klika {post_pause:.1f} s prije sljedećeg..."
+                    )
+                    time.sleep(post_pause)
 
                 except Exception as e:
                     print(f"  Preskačem gumb {i + 1} (greška: {e})")
@@ -79,15 +92,20 @@ def main():
             if stop:
                 break
 
-            # Nasumičan skrol – kao da pomakneš kotačić miša
-            scroll_amount = random.randint(1200, 2500)
+            scroll_amount = random.randint(1000, 1800)
+            print(
+                f"Kraj kruga {round_num + 1}, skrolam za {scroll_amount} px "
+                "i čekam da se učita novi sadržaj..."
+            )
             page.mouse.wheel(0, scroll_amount)
 
-            # Pričekaj da se učitaju nove aktivnosti i slike
-            time.sleep(random.uniform(4.0, 8.0))
+            scroll_pause = random.uniform(2.0, 4.0)
+            time.sleep(scroll_pause)
 
-        print(f"Gotovo. Ukupno kliknuto kudosa: {total_clicked}")
+        print(f"\nGotovo. Ukupno kliknuto kudosa: {total_clicked}")
+        print("Zatvaram browser...")
         browser.close()
+        print("KRAJ SKRIPTE")
 
 
 if __name__ == "__main__":
