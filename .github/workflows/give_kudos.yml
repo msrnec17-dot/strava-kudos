@@ -59,3 +59,22 @@ jobs:
           PYTHONUNBUFFERED: "1"
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
+      - name: Check kudos log
+        shell: bash
+        run: |
+          echo "Provjeravam output folder..."
+          ls -lah
+          echo ""
+          ls -lah output || true
+          echo ""
+          echo "Prvih 20 redaka iz output/kudos_log.csv:"
+          head -n 20 output/kudos_log.csv || true
+
+      - name: Upload kudos log artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kudos-log
+          path: output/kudos_log.csv
+          if-no-files-found: warn
