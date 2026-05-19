@@ -133,7 +133,7 @@ def main():
         total_clicked = 0
         stop = False
 
-        for round_num in range(6):
+        for round_num in range(3):
             if stop:
                 break
 
