@@ -3,46 +3,13 @@ name: run-kudos
 on:
   workflow_dispatch:
   schedule:
-    - cron: "30 22 * * *"  # 00:30 CEST
-    - cron: "0 23 * * *"   # 01:00 CEST
-    - cron: "30 0 * * *"   # 02:30 CEST
-    - cron: "0 1 * * *"    # 03:00 CEST
-    - cron: "0 2 * * *"    # 04:00 CEST
-    - cron: "0 3 * * *"    # 05:00 CEST
-    - cron: "0 4 * * *"    # 06:00 CEST
-    - cron: "30 4 * * *"   # 06:30 CEST
-    - cron: "0 5 * * *"    # 07:00 CEST
-    - cron: "30 5 * * *"   # 07:30 CEST
-    - cron: "0 6 * * *"    # 08:00 CEST
-    - cron: "30 6 * * *"   # 08:30 CEST
-    - cron: "0 7 * * *"    # 09:00 CEST
-    - cron: "30 7 * * *"   # 09:30 CEST
-    - cron: "0 8 * * *"    # 10:00 CEST
-    - cron: "30 8 * * *"   # 10:30 CEST
-    - cron: "0 9 * * *"    # 11:00 CEST
-    - cron: "30 9 * * *"   # 11:30 CEST
-    - cron: "0 10 * * *"   # 12:00 CEST
-    - cron: "30 10 * * *"  # 12:30 CEST
-    - cron: "0 11 * * *"   # 13:00 CEST
-    - cron: "30 11 * * *"  # 13:30 CEST
-    - cron: "0 12 * * *"   # 14:00 CEST
-    - cron: "30 12 * * *"  # 14:30 CEST
-    - cron: "30 13 * * *"  # 15:30 CEST
-    - cron: "0 14 * * *"   # 16:00 CEST
-    - cron: "30 14 * * *"  # 16:30 CEST
-    - cron: "0 15 * * *"   # 17:00 CEST
-    - cron: "30 15 * * *"  # 17:30 CEST
-    - cron: "0 16 * * *"   # 18:00 CEST
-    - cron: "30 16 * * *"  # 18:30 CEST
-    - cron: "0 17 * * *"   # 19:00 CEST
-    - cron: "30 17 * * *"  # 19:30 CEST
-    - cron: "0 18 * * *"   # 20:00 CEST
-    - cron: "30 18 * * *"  # 20:30 CEST
-    - cron: "0 19 * * *"   # 21:00 CEST
-    - cron: "30 19 * * *"  # 21:30 CEST
-    - cron: "0 20 * * *"   # 22:00 CEST
-    - cron: "30 20 * * *"  # 22:30 CEST
-    - cron: "30 21 * * *"  # 23:30 CEST
+    # Vremena su u UTC (što je 2 sata manje od našeg trenutnog vremena - CEST)
+    - cron: "30 5 * * *"   # 07:30 CEST (Ranojutarnji treninzi)
+    - cron: "30 7 * * *"   # 09:30 CEST (Kasniji jutarnji treninzi / dolazak na posao)
+    - cron: "30 11 * * *"  # 13:30 CEST (Pauza za ručak)
+    - cron: "30 15 * * *"  # 17:30 CEST (Nakon posla)
+    - cron: "30 17 * * *"  # 19:30 CEST (Glavni večernji treninzi)
+    - cron: "30 19 * * *"  # 21:30 CEST (Završetak dana)
 
 jobs:
   run-kudos:
