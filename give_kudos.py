@@ -36,8 +36,8 @@ def main():
         total_clicked = 0
         stop = False
 
-        # 2 kruga skrolanja – dovoljno brzo, a opet prođe nešto feeda
-        for round_num in range(2):
+        # 6 krugova skrolanja
+        for round_num in range(6):
             if stop:
                 break
 
