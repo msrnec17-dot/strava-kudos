@@ -3,17 +3,16 @@ name: run-kudos
 on:
   workflow_dispatch:
   schedule:
-    # Vremena su u UTC (oko +2 sata za CEST)
-    - cron: "0 4 * * *"    # 06:00 CEST (rano ujutro)
-    - cron: "0 6 * * *"    # 08:00 CEST (jutro)
-    - cron: "0 8 * * *"    # 10:00 CEST (prijepodne)
-    - cron: "0 10 * * *"   # 12:00 CEST (podne)
-    - cron: "0 12 * * *"   # 14:00 CEST (rano poslijepodne)
-    - cron: "0 14 * * *"   # 16:00 CEST (poslijepodne)
-    - cron: "0 16 * * *"   # 18:00 CEST (predvečer)
-    - cron: "0 18 * * *"   # 20:00 CEST (večer)
-    - cron: "0 20 * * *"   # 22:00 CEST (kasna večer)
-    - cron: "30 21 * * *"  # 23:30 CEST (kraj dana)
+    - cron: "0 4 * * *"
+    - cron: "0 6 * * *"
+    - cron: "0 8 * * *"
+    - cron: "0 10 * * *"
+    - cron: "0 12 * * *"
+    - cron: "0 14 * * *"
+    - cron: "0 16 * * *"
+    - cron: "0 18 * * *"
+    - cron: "0 20 * * *"
+    - cron: "30 21 * * *"
 
 jobs:
   run-kudos:
@@ -58,3 +57,5 @@ jobs:
         run: python -u give_kudos.py
         env:
           PYTHONUNBUFFERED: "1"
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
