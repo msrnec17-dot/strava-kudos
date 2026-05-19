@@ -50,5 +50,5 @@ jobs:
           echo "${{ secrets.STRAVA_STATE_B64 }}" | base64 -d > strava_state.json
           ls -lh strava_state.json
 
-      - name: Run kudos script
-        run: python give_kudos.py
+            - name: Run kudos script
+        run: python -u give_kudos.py
