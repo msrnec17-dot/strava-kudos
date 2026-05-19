@@ -22,9 +22,6 @@ def clean_name(text):
 
 
 def get_athlete_name_from_button(btn):
-    athlete_name = ""
-
-    # Najbliža kartica aktivnosti iznad kudos gumba
     card = btn.locator(
         "xpath=ancestor::*["
         "contains(@class, 'react-card') or "
@@ -34,11 +31,10 @@ def get_athlete_name_from_button(btn):
         "][1]"
     )
 
-    # Najprije probaj točno ono što si našao u inspectu
     candidate_selectors = [
         "a[data-testid='owners-name']",
-        "a[href*='/athletes/']",
         "header a[data-testid='owners-name']",
+        "a[href*='/athletes/']",
         "header a[href*='/athletes/']",
         ".entry-owner",
         ".minimal-user",
@@ -57,7 +53,6 @@ def get_athlete_name_from_button(btn):
         except Exception:
             pass
 
-    # Fallback: pokušaj iz headera aktivnosti
     fallback_selectors = [
         "header",
         ".entry-head",
@@ -91,4 +86,130 @@ def send_telegram_report(total_clicked, kudos_names):
         print("Telegram token/chat id nisu postavljeni.")
         return
 
-    if total_clicked
+    if total_clicked > 0:
+        unique_names = []
+        for name in kudos_names:
+            if name not in unique_names:
+                unique_names.append(name)
+
+        if len(unique_names) > 30:
+            names_str = "\n".join(f"- {name}" for name in unique_names[:30])
+            names_str += f"\n... i još {len(unique_names) - 30} osoba"
+        else:
+            names_str = "\n".join(f"- {name}" for name in unique_names)
+
+        message = (
+            f"Strava bot je završio.\n\n"
+            f"Podijeljeno kudosa: {total_clicked}\n\n"
+            f"Kudose su dobili:\n{names_str}"
+        )
+    else:
+        message = (
+            "Strava bot je završio.\n\n"
+            "Nije pronađena nijedna nova aktivnost za kudos."
+        )
+
+    try:
+        url = f"https://api.telegram.org/bot{tel_token}/sendMessage"
+        data = urllib.parse.urlencode({
+            "chat_id": tel_chat_id,
+            "text": message
+        }).encode("utf-8")
+        urllib.request.urlopen(url, data=data, timeout=10)
+        print("Telegram izvješće uspješno poslano.")
+    except Exception as e:
+        print(f"Greška pri slanju Telegram poruke: {e}")
+
+
+def main():
+    print("POČETAK SKRIPTE")
+    kudos_names = []
+
+    with sync_playwright() as p:
+        print("Pokrećem Firefox (headless)...")
+        browser = p.firefox.launch(headless=True)
+
+        print("Kreiram Strava kontekst sa strava_state.json...")
+        context = browser.new_context(
+            storage_state="strava_state.json",
+            viewport={"width": 1920, "height": 1080},
+            user_agent=(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:110.0) "
+                "Gecko/20100101 Firefox/110.0"
+            ),
+        )
+
+        page = context.new_page()
+
+        print("Otvaram Strava dashboard...")
+        page.goto("https://www.strava.com/dashboard", wait_until="networkidle")
+
+        pause = random.uniform(4.0, 6.0)
+        print(f"Čekam {pause:.1f} s da se feed učita...")
+        time.sleep(pause)
+
+        total_clicked = 0
+        stop = False
+
+        for round_num in range(6):
+            if stop:
+                break
+
+            print(f"\nKrug {round_num + 1} – tražim kudose...")
+
+            buttons = page.locator(
+                "button[title='Give kudos'], "
+                "button[title='Be the first to give kudos!']"
+            )
+            count = buttons.count()
+            print(f"Našao {count} kudos gumba u ovom krugu")
+
+            for i in range(count):
+                if total_clicked >= MAX_KUDOS:
+                    print(f"Dosegnut limit od {MAX_KUDOS} kudosa – prekidam.")
+                    stop = True
+                    break
+
+                try:
+                    btn = buttons.nth(i)
+                    btn.scroll_into_view_if_needed()
+
+                    pre_pause = random.uniform(0.8, 2.0)
+                    time.sleep(pre_pause)
+
+                    athlete_name = get_athlete_name_from_button(btn)
+
+                    btn.click(timeout=3000)
+                    total_clicked += 1
+                    kudos_names.append(athlete_name)
+
+                    print(
+                        f"  Kliknuo gumb {i + 1} za: {athlete_name} "
+                        f"(ukupno kliknuto: {total_clicked})"
+                    )
+
+                    post_pause = random.uniform(1.0, 3.0)
+                    time.sleep(post_pause)
+
+                except Exception as e:
+                    print(f"  Preskačem gumb {i + 1} (greška: {e})")
+
+            if stop:
+                break
+
+            scroll_amount = random.randint(1000, 1800)
+            print(f"Kraj kruga {round_num + 1}, skrolam za {scroll_amount} px...")
+            page.mouse.wheel(0, scroll_amount)
+
+            scroll_pause = random.uniform(2.0, 4.0)
+            time.sleep(scroll_pause)
+
+        print(f"\nGotovo. Ukupno kliknuto kudosa: {total_clicked}")
+        browser.close()
+
+    send_telegram_report(total_clicked, kudos_names)
+    print("KRAJ SKRIPTE")
+
+
+if __name__ == "__main__":
+    main()
