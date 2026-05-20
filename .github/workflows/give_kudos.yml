@@ -53,6 +53,12 @@ jobs:
           echo "${{ secrets.STRAVA_STATE_B64 }}" | base64 -d > strava_state.json
           ls -lh strava_state.json
 
+      - name: Create output directory
+        shell: bash
+        run: |
+          mkdir -p output
+          ls -lah output
+
       - name: Run kudos script
         run: python -u give_kudos.py
         env:
@@ -61,15 +67,30 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
 
       - name: Check kudos log
+        if: always()
         shell: bash
         run: |
-          echo "Provjeravam output folder..."
+          echo "Provjeravam root folder..."
           ls -lah
           echo ""
+          echo "Provjeravam output folder..."
           ls -lah output || true
           echo ""
           echo "Prvih 20 redaka iz output/kudos_log.csv:"
           head -n 20 output/kudos_log.csv || true
+
+      - name: Run analysis
+        if: always()
+        shell: bash
+        run: |
+          python -u analyze_kudos.py > output/kudos_analysis.txt
+
+      - name: Check analysis output
+        if: always()
+        shell: bash
+        run: |
+          echo "Prvih 50 redaka iz output/kudos_analysis.txt:"
+          head -n 50 output/kudos_analysis.txt || true
 
       - name: Upload kudos log artifact
         if: always()
@@ -77,4 +98,12 @@ jobs:
         with:
           name: kudos-log
           path: output/kudos_log.csv
+          if-no-files-found: warn
+
+      - name: Upload kudos analysis artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kudos-analysis
+          path: output/kudos_analysis.txt
           if-no-files-found: warn
