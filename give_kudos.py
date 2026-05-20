@@ -1,8 +1,11 @@
 import time
 import random
 import os
+import csv
 import urllib.request
 import urllib.parse
+from pathlib import Path
+from datetime import datetime
 from playwright.sync_api import sync_playwright
 
 MAX_KUDOS = 60
@@ -60,6 +63,35 @@ def get_card_kudos_button(card):
     return None
 
 
+def save_kudos_run(total_clicked, kudos_names):
+    output_dir = Path("output")
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    log_path = output_dir / "kudos_log.csv"
+    file_exists = log_path.exists()
+
+    unique_names = []
+    for name in kudos_names:
+        if name not in unique_names:
+            unique_names.append(name)
+
+    names_str = ", ".join(unique_names)
+
+    with log_path.open("a", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+
+        if not file_exists:
+            writer.writerow(["timestamp", "total_clicked", "names"])
+
+        writer.writerow([
+            datetime.now().isoformat(timespec="seconds"),
+            total_clicked,
+            names_str
+        ])
+
+    print(f"Podaci spremljeni u: {log_path}")
+
+
 def send_telegram_report(total_clicked, kudos_names):
     tel_token = os.environ.get("TELEGRAM_TOKEN")
     tel_chat_id = os.environ.get("TELEGRAM_CHAT_ID")
@@ -69,24 +101,22 @@ def send_telegram_report(total_clicked, kudos_names):
         return
 
     if total_clicked > 0:
-        # Prikupi jedinstvena imena, zadržavajući redoslijed
         unique_names = []
         for name in kudos_names:
             if name not in unique_names:
                 unique_names.append(name)
 
-        # Formatiraj imena jedno iza drugog, razdvojena zarezom i razmakom
         names_str = ", ".join(unique_names)
 
         message = (
-            f"Strava bot je završio.\\n\\n"
-            f"Podijeljeno kudosa: {total_clicked}\\n\\n"
+            f"Strava bot je završio.\n\n"
+            f"Podijeljeno kudosa: {total_clicked}\n\n"
             f"Kudose su dobili: {names_str}"
         )
     else:
         message = (
-            "Strava bot je završio.\\n\\n"
-            "Podijeljeno kudosa: 0\\n\\n"
+            "Strava bot je završio.\n\n"
+            "Podijeljeno kudosa: 0\n\n"
             "Nije pronađena nijedna nova aktivnost za kudos."
         )
 
@@ -136,7 +166,7 @@ def main():
             if stop:
                 break
 
-            print(f"\\nKrug {round_num + 1} – tražim aktivnosti...")
+            print(f"\nKrug {round_num + 1} – tražim aktivnosti...")
 
             card_selectors = [
                 "[data-testid='web-feed-entry']",
@@ -224,9 +254,10 @@ def main():
             page.mouse.wheel(0, scroll_amount)
             time.sleep(random.uniform(2.0, 4.0))
 
-        print(f"\\nGotovo. Ukupno kliknuto kudosa: {total_clicked}")
+        print(f"\nGotovo. Ukupno kliknuto kudosa: {total_clicked}")
         browser.close()
 
+    save_kudos_run(total_clicked, kudos_names)
     send_telegram_report(total_clicked, kudos_names)
     print("KRAJ SKRIPTE")
 
