@@ -11,10 +11,10 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
 
 LOG_PATH = Path("output/kudos_log.csv")
-MAX_KUDOS = 90
+MAX_KUDOS = 35
 MAX_ROUNDS = 12
 FINAL_SWEEPS = 3
-MAX_IDLE_PASSES = 4
+MAX_IDLE_PASSES = 3
 DASHBOARD_URL = "https://www.strava.com/dashboard"
 
 
@@ -36,6 +36,10 @@ def append_to_log(user, status, details=""):
             status,
             details,
         ])
+
+
+def human_pause(min_s, max_s):
+    time.sleep(random.uniform(min_s, max_s))
 
 
 def clean_name(text):
@@ -100,6 +104,12 @@ def detect_button_state(button):
     except Exception:
         aria_pressed = ""
 
+    try:
+        disabled_attr = button.get_attribute("disabled")
+        disabled = disabled_attr is not None
+    except Exception:
+        disabled = False
+
     title_lower = title.lower()
 
     if aria_pressed == "true":
@@ -111,6 +121,9 @@ def detect_button_state(button):
     if "give kudos" in title_lower or "be the first to give kudos!" in title_lower:
         return "unfilled", title, aria_pressed
 
+    if disabled:
+        return "unknown", title, aria_pressed
+
     return "unknown", title, aria_pressed
 
 
@@ -120,6 +133,7 @@ def get_kudos_buttons(page):
         "button[title='Give kudos']",
         "button[title='Be the first to give kudos!']",
         "button[title='View all kudos']",
+        "button[aria-label*='kudos' i]",
     ]
 
     seen = set()
@@ -132,12 +146,22 @@ def get_kudos_buttons(page):
             for i in range(count):
                 btn = loc.nth(i)
                 try:
-                    handle = btn.element_handle()
-                    if handle is None:
+                    if not btn.is_visible(timeout=500):
                         continue
-                    key = str(handle)
+
+                    box = btn.bounding_box()
+                    if not box:
+                        continue
+
+                    key = (
+                        round(box["x"], 1),
+                        round(box["y"], 1),
+                        round(box["width"], 1),
+                        round(box["height"], 1),
+                    )
                     if key in seen:
                         continue
+
                     seen.add(key)
                     buttons.append(btn)
                 except Exception:
@@ -167,8 +191,24 @@ def find_card_for_button(button):
     return None
 
 
-def human_pause(min_s, max_s):
-    time.sleep(random.uniform(min_s, max_s))
+def wait_for_kudos_confirmation(button, timeout_ms=4000):
+    end_time = time.time() + (timeout_ms / 1000)
+    while time.time() < end_time:
+        state, title, aria = detect_button_state(button)
+        if state == "filled":
+            return True, title, aria
+        human_pause(0.15, 0.35)
+    state, title, aria = detect_button_state(button)
+    return False, title, aria
+
+
+def click_button_human_like(button):
+    box = button.bounding_box()
+    if box:
+        x = box["x"] + box["width"] * random.uniform(0.35, 0.65)
+        y = box["y"] + box["height"] * random.uniform(0.35, 0.65)
+        button.page.mouse.move(x, y, steps=random.randint(8, 20))
+        human_pause(0.08, 0.22)
 
 
 def try_click_button(button, user):
@@ -176,12 +216,10 @@ def try_click_button(button, user):
 
     if state_before == "filled":
         append_to_log(user, "already_kudoed", f"title={title_before}; aria={aria_before}")
-        print(f"Već kudosano: {user} | title={title_before}")
         return False
 
     if state_before == "unknown":
         append_to_log(user, "unknown_button_state", f"title={title_before}; aria={aria_before}")
-        print(f"Nepoznato stanje gumba: {user} | title={title_before}")
         return False
 
     try:
@@ -189,32 +227,47 @@ def try_click_button(button, user):
     except Exception:
         pass
 
-    human_pause(0.35, 0.9)
+    human_pause(0.45, 1.1)
+
+    try:
+        click_button_human_like(button)
+    except Exception:
+        pass
+
+    click_errors = []
 
     try:
         button.click(timeout=3500)
-    except PlaywrightTimeoutError:
-        append_to_log(user, "click_error", f"timeout; title={title_before}; aria={aria_before}")
-        print(f"Greška klik timeout: {user}")
-        return False
+    except PlaywrightTimeoutError as e:
+        click_errors.append(f"timeout:{e}")
     except Exception as e:
-        append_to_log(user, "click_error", f"{type(e).__name__}: {e}")
-        print(f"Greška klik: {user} | {e}")
-        return False
+        click_errors.append(f"{type(e).__name__}:{e}")
 
-    human_pause(0.65, 1.4)
+    human_pause(0.45, 0.9)
 
-    state_after, title_after, aria_after = detect_button_state(button)
-
-    if state_after == "filled":
+    confirmed, title_after, aria_after = wait_for_kudos_confirmation(button, timeout_ms=3500)
+    if confirmed:
         append_to_log(user, "clicked", f"title_before={title_before}; title_after={title_after}")
         print(f"Klik potvrđen: {user}")
+        return True
+
+    try:
+        button.click(timeout=3500, force=True)
+    except Exception as e:
+        click_errors.append(f"force_{type(e).__name__}:{e}")
+
+    human_pause(0.5, 1.1)
+
+    confirmed, title_after, aria_after = wait_for_kudos_confirmation(button, timeout_ms=4000)
+    if confirmed:
+        append_to_log(user, "clicked", f"title_before={title_before}; title_after={title_after}; mode=force")
+        print(f"Klik potvrđen (force): {user}")
         return True
 
     append_to_log(
         user,
         "click_not_confirmed",
-        f"title_before={title_before}; aria_before={aria_before}; title_after={title_after}; aria_after={aria_after}",
+        f"title_before={title_before}; aria_before={aria_before}; title_after={title_after}; aria_after={aria_after}; errors={' | '.join(click_errors)}",
     )
     print(f"Klik nije potvrđen: {user} | after={title_after}")
     return False
@@ -259,7 +312,7 @@ def send_telegram_report(total_clicked, kudos_names):
         print(f"Greška pri slanju Telegram poruke: {e}")
 
 
-def process_visible_buttons(page, label, total_clicked, kudos_names):
+def process_visible_buttons(page, label, total_clicked, kudos_names, seen_users):
     clicked_this_pass = 0
     buttons = get_kudos_buttons(page)
 
@@ -280,8 +333,12 @@ def process_visible_buttons(page, label, total_clicked, kudos_names):
 
             print(f"Kandidat {idx} | user={user} | title={title} | aria={aria} | state={state}")
 
+            if user in seen_users and state != "unfilled":
+                continue
+
             if state == "filled":
                 append_to_log(user, "already_kudoed", f"title={title}; aria={aria}")
+                seen_users.add(user)
                 continue
 
             if state == "unknown":
@@ -289,18 +346,20 @@ def process_visible_buttons(page, label, total_clicked, kudos_names):
                 continue
 
             success = try_click_button(button, user)
+            seen_users.add(user)
+
             if success:
                 total_clicked += 1
                 clicked_this_pass += 1
                 kudos_names.append(user)
 
-            human_pause(0.45, 1.05)
+            human_pause(0.9, 2.2)
 
         except Exception as e:
             append_to_log("UNKNOWN_USER", "click_error", f"loop_error: {type(e).__name__}: {e}")
             print(f"Greška u prolazu: {e}")
 
-    return total_clicked, kudos_names, clicked_this_pass
+    return total_clicked, kudos_names, clicked_this_pass, seen_users
 
 
 def main():
@@ -310,6 +369,7 @@ def main():
     total_clicked = 0
     kudos_names = []
     idle_passes = 0
+    seen_users = set()
 
     append_to_log("SYSTEM", "summary", "Run started")
 
@@ -327,18 +387,19 @@ def main():
 
         print("Otvaram dashboard...")
         page.goto(DASHBOARD_URL, wait_until="domcontentloaded")
-        human_pause(4.0, 6.5)
+        human_pause(5.0, 7.5)
 
         for round_num in range(1, MAX_ROUNDS + 1):
             if total_clicked >= MAX_KUDOS:
                 break
 
             print(f"--- ciklus {round_num}/{MAX_ROUNDS} ---")
-            total_clicked, kudos_names, clicked_this_round = process_visible_buttons(
+            total_clicked, kudos_names, clicked_this_round, seen_users = process_visible_buttons(
                 page,
                 f"Ciklus {round_num}",
                 total_clicked,
                 kudos_names,
+                seen_users,
             )
 
             print(f"Ciklus {round_num} kliknuto {clicked_this_round}, ukupno {total_clicked}")
@@ -355,24 +416,24 @@ def main():
                 print(f"Nema novih potvrđenih klikova već {idle_passes} prolaza, prekidam glavni dio.")
                 break
 
-            scroll_amount = random.randint(1800, 3000)
             try:
-                page.mouse.wheel(0, scroll_amount)
+                page.mouse.wheel(0, random.randint(1400, 2400))
             except Exception:
                 pass
 
-            human_pause(1.8, 3.4)
+            human_pause(2.5, 4.8)
 
         for sweep_num in range(1, FINAL_SWEEPS + 1):
             if total_clicked >= MAX_KUDOS:
                 break
 
             print(f"Final sweep {sweep_num}/{FINAL_SWEEPS}")
-            total_clicked, kudos_names, clicked_this_sweep = process_visible_buttons(
+            total_clicked, kudos_names, clicked_this_sweep, seen_users = process_visible_buttons(
                 page,
                 f"Final sweep {sweep_num}",
                 total_clicked,
                 kudos_names,
+                seen_users,
             )
 
             print(f"Final sweep {sweep_num} kliknuto {clicked_this_sweep}, ukupno {total_clicked}")
@@ -381,11 +442,11 @@ def main():
                 break
 
             try:
-                page.mouse.wheel(0, random.randint(700, 1400))
+                page.mouse.wheel(0, random.randint(700, 1200))
             except Exception:
                 pass
 
-            human_pause(1.2, 2.6)
+            human_pause(2.0, 3.6)
 
         browser.close()
 
