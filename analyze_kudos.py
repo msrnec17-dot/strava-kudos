@@ -14,6 +14,11 @@ def load_rows():
         return list(reader)
 
 
+def clean(value, default=""):
+    value = (value or "").strip()
+    return value if value else default
+
+
 def print_status_block(title, counter):
     print(title)
     if not counter:
@@ -35,33 +40,46 @@ def main():
         return
 
     total_rows = len(rows)
+
     status_counter = Counter()
     user_counter = Counter()
     details_counter = Counter()
     system_counter = Counter()
     user_status_counter = defaultdict(Counter)
 
+    clicked_users = Counter()
+    clicked_details = Counter()
+
     for row in rows:
-        timestamp = (row.get("timestamp") or "").strip()
-        user = (row.get("user") or "UNKNOWN_USER").strip()
-        status = (row.get("status") or "unknown").strip()
-        details = (row.get("details") or "").strip()
+        timestamp = clean(row.get("timestamp"))
+        user = clean(row.get("user"), "UNKNOWN_USER")
+        status = clean(row.get("status"), "unknown")
+        details = clean(row.get("details"))
 
         status_counter[status] += 1
-        details_counter[details] += 1
+        if details:
+            details_counter[details] += 1
 
         if user == "SYSTEM":
             system_counter[status] += 1
-        else:
-            user_counter[user] += 1
-            user_status_counter[user][status] += 1
+            continue
 
-    clicked_count = status_counter.get("clicked", 0)
+        user_counter[user] += 1
+        user_status_counter[user][status] += 1
+
+        if status == "clicked":
+            clicked_users[user] += 1
+            if details:
+                clicked_details[details] += 1
+
+    clicked_count = sum(clicked_users.values())
+    unique_clicked_users = len(clicked_users)
     no_click_runs = system_counter.get("no_clicks", 0)
     summary_runs = system_counter.get("summary", 0)
 
     print(f"Ukupno redaka u logu: {total_rows}")
     print(f"Ukupno kliknutih kudosa: {clicked_count}")
+    print(f"Broj jedinstvenih korisnika s klikom: {unique_clicked_users}")
     print(f"Broj runova bez klikova: {no_click_runs}")
     print(f"Broj runova sa summary zapisom: {summary_runs}")
     print()
@@ -69,8 +87,8 @@ def main():
     print_status_block("Statusi", status_counter)
     print()
 
-    top_users = user_counter.most_common(10)
     print("Top 10 korisnika po broju zapisa")
+    top_users = user_counter.most_common(10)
     if not top_users:
         print("  (nema korisničkih zapisa)")
     else:
@@ -80,6 +98,15 @@ def main():
                 for status, value in user_status_counter[user].most_common()
             )
             print(f"  - {user}: {count} zapisa ({status_parts})")
+    print()
+
+    print("Top korisnici po broju klikova")
+    top_clicked = clicked_users.most_common(10)
+    if not top_clicked:
+        print("  (nema klikova)")
+    else:
+        for user, count in top_clicked:
+            print(f"  - {user}: {count} klikova")
     print()
 
     interesting_statuses = [
@@ -102,12 +129,21 @@ def main():
         print("  (nema problematičnih statusa)")
     print()
 
-    top_details = [(k, v) for k, v in details_counter.most_common(10) if k]
     print("Top 10 detail poruka")
+    top_details = details_counter.most_common(10)
     if not top_details:
         print("  (nema detail poruka)")
     else:
         for detail, count in top_details:
+            print(f"  - {count}x {detail}")
+    print()
+
+    print("Top 10 detail poruka za klikove")
+    top_clicked_details = clicked_details.most_common(10)
+    if not top_clicked_details:
+        print("  (nema detail poruka za klikove)")
+    else:
+        for detail, count in top_clicked_details:
             print(f"  - {count}x {detail}")
 
 
