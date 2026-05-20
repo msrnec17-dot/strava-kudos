@@ -69,25 +69,24 @@ def send_telegram_report(total_clicked, kudos_names):
         return
 
     if total_clicked > 0:
+        # Prikupi jedinstvena imena, zadržavajući redoslijed
         unique_names = []
         for name in kudos_names:
             if name not in unique_names:
                 unique_names.append(name)
 
-        if len(unique_names) > 30:
-            names_str = "\n".join(f"- {name}" for name in unique_names[:30])
-            names_str += f"\n... i još {len(unique_names) - 30} osoba"
-        else:
-            names_str = "\n".join(f"- {name}" for name in unique_names)
+        # Formatiraj imena jedno iza drugog, razdvojena zarezom i razmakom
+        names_str = ", ".join(unique_names)
 
         message = (
-            f"Strava bot je završio.\n\n"
-            f"Podijeljeno kudosa: {total_clicked}\n\n"
-            f"Kudose su dobili:\n{names_str}"
+            f"Strava bot je završio.\\n\\n"
+            f"Podijeljeno kudosa: {total_clicked}\\n\\n"
+            f"Kudose su dobili: {names_str}"
         )
     else:
         message = (
-            "Strava bot je završio.\n\n"
+            "Strava bot je završio.\\n\\n"
+            "Podijeljeno kudosa: 0\\n\\n"
             "Nije pronađena nijedna nova aktivnost za kudos."
         )
 
@@ -137,7 +136,7 @@ def main():
             if stop:
                 break
 
-            print(f"\nKrug {round_num + 1} – tražim aktivnosti...")
+            print(f"\\nKrug {round_num + 1} – tražim aktivnosti...")
 
             card_selectors = [
                 "[data-testid='web-feed-entry']",
@@ -225,7 +224,7 @@ def main():
             page.mouse.wheel(0, scroll_amount)
             time.sleep(random.uniform(2.0, 4.0))
 
-        print(f"\nGotovo. Ukupno kliknuto kudosa: {total_clicked}")
+        print(f"\\nGotovo. Ukupno kliknuto kudosa: {total_clicked}")
         browser.close()
 
     send_telegram_report(total_clicked, kudos_names)
