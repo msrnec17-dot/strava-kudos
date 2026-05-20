@@ -1,38 +1,74 @@
-import time
-import random
-import os
 import csv
-import urllib.request
+import os
+import random
+import time
 import urllib.parse
+import urllib.request
+from datetime import datetime, timezone
 from pathlib import Path
-from datetime import datetime
+
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
 
+LOG_PATH = Path("output/kudos_log.csv")
 MAX_KUDOS = 60
+MAX_ROUNDS = 8
+FINAL_SWEEPS = 2
+DASHBOARD_URL = "https://www.strava.com/dashboard"
+
+
+def ensure_log_file():
+    LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    if not LOG_PATH.exists():
+        with LOG_PATH.open("w", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerow(["timestamp", "user", "status", "details"])
+
+
+def append_to_log(user, status, details=""):
+    ensure_log_file()
+    with LOG_PATH.open("a", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow([
+            datetime.now(timezone.utc).isoformat(),
+            user,
+            status,
+            details,
+        ])
 
 
 def clean_name(text):
     if not text:
         return ""
+
     text = " ".join(text.split()).strip()
     bad_values = {
-        "", "give kudos", "be the first to give kudos!", "kudos",
-        "comment", "share", "more", "view all comments"
+        "",
+        "give kudos",
+        "be the first to give kudos!",
+        "view all kudos",
+        "kudos",
+        "comment",
+        "share",
+        "more",
+        "view all comments",
     }
+
     if text.lower() in bad_values:
         return ""
+
     return text
 
 
 def get_card_name(card):
-    name_selectors = [
+    selectors = [
         "a[data-testid='owners-name']",
-        "a[href*='/athletes/']",
         "header a[data-testid='owners-name']",
+        "a[href*='/athletes/']",
         "header a[href*='/athletes/']",
     ]
 
-    for selector in name_selectors:
+    for selector in selectors:
         try:
             loc = card.locator(selector).first
             if loc.count() > 0:
@@ -42,54 +78,144 @@ def get_card_name(card):
         except Exception:
             pass
 
-    return "Nepoznato ime"
+    try:
+        text = clean_name(card.inner_text(timeout=1000))
+        if text:
+            return text.split("\n")[0][:120]
+    except Exception:
+        pass
+
+    return "UNKNOWN_USER"
 
 
-def get_card_kudos_button(card):
-    button_selectors = [
+def detect_button_state(button):
+    try:
+        title = (button.get_attribute("title") or "").strip()
+    except Exception:
+        title = ""
+
+    try:
+        aria_pressed = (button.get_attribute("aria-pressed") or "").strip().lower()
+    except Exception:
+        aria_pressed = ""
+
+    title_lower = title.lower()
+
+    if aria_pressed == "true":
+        return "filled", title, aria_pressed
+
+    if "view all kudos" in title_lower:
+        return "filled", title, aria_pressed
+
+    if "give kudos" in title_lower or "be the first to give kudos!" in title_lower:
+        return "unfilled", title, aria_pressed
+
+    return "unknown", title, aria_pressed
+
+
+def get_kudos_buttons(page):
+    selectors = [
         "[data-testid='kudos_button']",
         "button[title='Give kudos']",
         "button[title='Be the first to give kudos!']",
+        "button[title='View all kudos']",
     ]
 
-    for selector in button_selectors:
+    seen = set()
+    buttons = []
+
+    for selector in selectors:
         try:
-            loc = card.locator(selector).first
-            if loc.count() > 0:
-                return loc
+            loc = page.locator(selector)
+            count = loc.count()
+            for i in range(count):
+                btn = loc.nth(i)
+                try:
+                    handle = btn.element_handle()
+                    if handle is None:
+                        continue
+                    key = str(handle)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    buttons.append(btn)
+                except Exception:
+                    continue
+        except Exception:
+            continue
+
+    return buttons
+
+
+def find_card_for_button(page, button):
+    card_selectors = [
+        "article",
+        "[data-testid='web-feed-entry']",
+        ".react-card",
+        ".feed-entry",
+    ]
+
+    for selector in card_selectors:
+        try:
+            locator = button.locator(f"xpath=ancestor::{selector}[1]")
+            if locator.count() > 0:
+                return locator.first
         except Exception:
             pass
 
-    return None
+    try:
+        return button.locator("xpath=ancestor::*[self::article or @data-testid='web-feed-entry'][1]").first
+    except Exception:
+        return None
 
 
-def save_kudos_run(total_clicked, kudos_names):
-    output_dir = Path("output")
-    output_dir.mkdir(parents=True, exist_ok=True)
+def try_click_button(page, button, user):
+    state_before, title_before, aria_before = detect_button_state(button)
 
-    log_path = output_dir / "kudos_log.csv"
-    file_exists = log_path.exists()
+    if state_before == "filled":
+        append_to_log(user, "already_kudoed", f"title={title_before}; aria={aria_before}")
+        print(f"Već kudosano: {user} | title={title_before}")
+        return False
 
-    unique_names = []
-    for name in kudos_names:
-        if name not in unique_names:
-            unique_names.append(name)
+    if state_before == "unknown":
+        append_to_log(user, "unknown_button_state", f"title={title_before}; aria={aria_before}")
+        print(f"Nepoznato stanje gumba: {user} | title={title_before}")
+        return False
 
-    names_str = ", ".join(unique_names)
+    try:
+        button.scroll_into_view_if_needed(timeout=2000)
+    except Exception:
+        pass
 
-    with log_path.open("a", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
+    time.sleep(random.uniform(0.5, 1.2))
 
-        if not file_exists:
-            writer.writerow(["timestamp", "total_clicked", "names"])
+    try:
+        button.click(timeout=3000)
+    except PlaywrightTimeoutError:
+        append_to_log(user, "click_error", f"timeout; title={title_before}; aria={aria_before}")
+        print(f"Greška klik timeout: {user}")
+        return False
+    except Exception as e:
+        append_to_log(user, "click_error", f"{type(e).__name__}: {e}")
+        print(f"Greška klik: {user} | {e}")
+        return False
 
-        writer.writerow([
-            datetime.now().isoformat(timespec="seconds"),
-            total_clicked,
-            names_str
-        ])
+    time.sleep(random.uniform(0.8, 1.8))
 
-    print(f"Podaci spremljeni u: {log_path}")
+    state_after, title_after, aria_after = detect_button_state(button)
+
+    if state_after == "filled":
+        append_to_log(user, "clicked", f"title_before={title_before}; title_after={title_after}")
+        print(f"Klik potvrđen: {user}")
+        return True
+
+    append_to_log(
+        user,
+        "click_not_confirmed",
+        f"title_before={title_before}; aria_before={aria_before}; title_after={title_after}; aria_after={aria_after}",
+    )
+    print(f"Klik nije potvrđen: {user} | after={title_after}")
+    return False
 
 
 def send_telegram_report(total_clicked, kudos_names):
@@ -100,14 +226,13 @@ def send_telegram_report(total_clicked, kudos_names):
         print("Telegram token/chat id nisu postavljeni.")
         return
 
+    unique_names = []
+    for name in kudos_names:
+        if name not in unique_names:
+            unique_names.append(name)
+
     if total_clicked > 0:
-        unique_names = []
-        for name in kudos_names:
-            if name not in unique_names:
-                unique_names.append(name)
-
         names_str = ", ".join(unique_names)
-
         message = (
             f"Strava bot je završio.\n\n"
             f"Podijeljeno kudosa: {total_clicked}\n\n"
@@ -124,141 +249,151 @@ def send_telegram_report(total_clicked, kudos_names):
         url = f"https://api.telegram.org/bot{tel_token}/sendMessage"
         data = urllib.parse.urlencode({
             "chat_id": tel_chat_id,
-            "text": message
+            "text": message,
         }).encode("utf-8")
-        urllib.request.urlopen(url, data=data, timeout=10)
+        urllib.request.urlopen(url, data=data, timeout=15)
         print("Telegram izvješće uspješno poslano.")
     except Exception as e:
         print(f"Greška pri slanju Telegram poruke: {e}")
 
 
+def process_visible_buttons(page, label, total_clicked, kudos_names):
+    clicked_this_pass = 0
+    buttons = get_kudos_buttons(page)
+
+    print(f"{label} | Vidljivih kudos gumba: {len(buttons)}")
+
+    for idx, button in enumerate(buttons, start=1):
+        if total_clicked >= MAX_KUDOS:
+            break
+
+        try:
+            card = find_card_for_button(page, button)
+            if card is None:
+                append_to_log("UNKNOWN_USER", "no_button", "button without matching card")
+                continue
+
+            user = get_card_name(card)
+            state, title, aria = detect_button_state(button)
+
+            print(f"Kandidat {idx} | user={user} | title={title} | aria={aria} | state={state}")
+
+            if state == "filled":
+                append_to_log(user, "already_kudoed", f"title={title}; aria={aria}")
+                continue
+
+            if state == "unknown":
+                append_to_log(user, "unknown_button_state", f"title={title}; aria={aria}")
+                continue
+
+            success = try_click_button(page, button, user)
+            if success:
+                total_clicked += 1
+                clicked_this_pass += 1
+                kudos_names.append(user)
+
+            time.sleep(random.uniform(0.6, 1.4))
+
+        except Exception as e:
+            append_to_log("UNKNOWN_USER", "click_error", f"loop_error: {type(e).__name__}: {e}")
+            print(f"Greška u prolazu: {e}")
+
+    return total_clicked, kudos_names, clicked_this_pass
+
+
 def main():
+    ensure_log_file()
     print("POČETAK SKRIPTE")
+
+    total_clicked = 0
     kudos_names = []
 
-    with sync_playwright() as p:
-        print("Pokrećem Firefox (headless)...")
-        browser = p.firefox.launch(headless=True)
+    append_to_log("SYSTEM", "summary", "Run started")
 
-        print("Kreiram Strava kontekst sa strava_state.json...")
+    with sync_playwright() as p:
+        browser = p.firefox.launch(headless=True)
         context = browser.new_context(
             storage_state="strava_state.json",
-            viewport={"width": 1920, "height": 1080},
+            viewport={"width": 1600, "height": 2200},
             user_agent=(
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:110.0) "
                 "Gecko/20100101 Firefox/110.0"
             ),
         )
-
         page = context.new_page()
 
-        print("Otvaram Strava dashboard...")
-        page.goto("https://www.strava.com/dashboard", wait_until="networkidle")
+        print("Otvaram dashboard...")
+        page.goto(DASHBOARD_URL, wait_until="domcontentloaded")
+        time.sleep(random.uniform(4.0, 6.0))
 
-        pause = random.uniform(4.0, 6.0)
-        print(f"Čekam {pause:.1f} s da se feed učita...")
-        time.sleep(pause)
-
-        total_clicked = 0
-        stop = False
-
-        for round_num in range(3):
-            if stop:
+        for round_num in range(1, MAX_ROUNDS + 1):
+            if total_clicked >= MAX_KUDOS:
                 break
 
-            print(f"\nKrug {round_num + 1} – tražim aktivnosti...")
+            print(f"--- ciklus {round_num}/10 ---")
+            total_clicked, kudos_names, clicked_this_round = process_visible_buttons(
+                page,
+                f"Ciklus {round_num}",
+                total_clicked,
+                kudos_names,
+            )
 
-            card_selectors = [
-                "[data-testid='web-feed-entry']",
-                "article",
-                ".react-card",
-                ".feed-entry",
-            ]
+            print(f"Ciklus {round_num} kliknuto {clicked_this_round}, ukupno {total_clicked}")
 
-            cards = None
-            card_count = 0
-
-            for selector in card_selectors:
-                try:
-                    loc = page.locator(selector)
-                    count = loc.count()
-                    if count > 0:
-                        cards = loc
-                        card_count = count
-                        print(f"Našao {count} aktivnosti preko selektora: {selector}")
-                        break
-                except Exception:
-                    pass
-
-            if not cards or card_count == 0:
-                print("Nisam našao nijednu aktivnost u feedu.")
+            if total_clicked >= MAX_KUDOS:
                 break
 
-            for i in range(card_count):
-                if total_clicked >= MAX_KUDOS:
-                    print(f"Dosegnut limit od {MAX_KUDOS} kudosa – prekidam.")
-                    stop = True
-                    break
+            scroll_amount = random.randint(1400, 2400)
+            try:
+                page.mouse.wheel(0, scroll_amount)
+            except Exception:
+                pass
 
-                try:
-                    card = cards.nth(i)
-                    card.scroll_into_view_if_needed()
-                    time.sleep(random.uniform(0.5, 1.2))
-
-                    athlete_name = get_card_name(card)
-                    btn = get_card_kudos_button(card)
-
-                    if btn is None:
-                        print(f"  Aktivnost {i + 1}: nema dostupnog kudos gumba.")
-                        continue
-
-                    try:
-                        aria_pressed = btn.get_attribute("aria-pressed")
-                        if aria_pressed == "true":
-                            print(f"  Aktivnost {i + 1}: {athlete_name} već ima kudos.")
-                            continue
-                    except Exception:
-                        pass
-
-                    try:
-                        button_title = btn.get_attribute("title") or ""
-                        if "Give kudos" not in button_title and "Be the first to give kudos!" not in button_title:
-                            print(f"  Aktivnost {i + 1}: kudos gumb nije aktivan za {athlete_name}.")
-                            continue
-                    except Exception:
-                        pass
-
-                    pre_pause = random.uniform(0.8, 1.8)
-                    time.sleep(pre_pause)
-
-                    btn.click(timeout=3000)
-                    total_clicked += 1
-                    kudos_names.append(athlete_name)
-
-                    print(
-                        f"  Kliknuo kudos za: {athlete_name} "
-                        f"(ukupno kliknuto: {total_clicked})"
-                    )
-
-                    post_pause = random.uniform(1.0, 2.5)
-                    time.sleep(post_pause)
-
-                except Exception as e:
-                    print(f"  Preskačem aktivnost {i + 1} (greška: {e})")
-
-            if stop:
-                break
-
-            scroll_amount = random.randint(1200, 2200)
-            print(f"Kraj kruga {round_num + 1}, skrolam za {scroll_amount} px...")
-            page.mouse.wheel(0, scroll_amount)
             time.sleep(random.uniform(2.0, 4.0))
 
-        print(f"\nGotovo. Ukupno kliknuto kudosa: {total_clicked}")
+        for sweep_num in range(1, FINAL_SWEEPS + 1):
+            if total_clicked >= MAX_KUDOS:
+                break
+
+            print(f"Final sweep {sweep_num}/{FINAL_SWEEPS}")
+            total_clicked, kudos_names, clicked_this_sweep = process_visible_buttons(
+                page,
+                f"Final sweep {sweep_num}",
+                total_clicked,
+                kudos_names,
+            )
+
+            print(f"Final sweep {sweep_num} kliknuto {clicked_this_sweep}, ukupno {total_clicked}")
+
+            if total_clicked >= MAX_KUDOS:
+                break
+
+            try:
+                page.mouse.wheel(0, random.randint(600, 1200))
+            except Exception:
+                pass
+
+            time.sleep(random.uniform(1.5, 3.0))
+
         browser.close()
 
-    save_kudos_run(total_clicked, kudos_names)
-    send_telegram_report(total_clicked, kudos_names)
+    if total_clicked == 0:
+        append_to_log("SYSTEM", "no_clicks", "No kudos buttons were successfully clicked in this run")
+
+    unique_names = []
+    for name in kudos_names:
+        if name not in unique_names:
+            unique_names.append(name)
+
+    append_to_log(
+        "SYSTEM",
+        "summary",
+        f"Run finished; total_clicked={total_clicked}; unique_users={len(unique_names)}"
+    )
+
+    send_telegram_report(total_clicked, unique_names)
+
+    print(f"Ukupno kliknutih kudosa: {total_clicked}")
     print("KRAJ SKRIPTE")
 
 
