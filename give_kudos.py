@@ -11,7 +11,7 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
 
 LOG_PATH = Path("output/kudos_log.csv")
-MAX_KUDOS = 35
+MAX_KUDOS = 45
 MAX_ROUNDS = 12
 FINAL_SWEEPS = 3
 MAX_IDLE_PASSES = 3
