@@ -4,6 +4,7 @@ import random
 import time
 import urllib.parse
 import urllib.request
+from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -11,7 +12,7 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
 
 LOG_PATH = Path("output/kudos_log.csv")
-MAX_KUDOS = 45
+MAX_KUDOS = 35
 MAX_ROUNDS = 12
 FINAL_SWEEPS = 3
 MAX_IDLE_PASSES = 3
@@ -273,6 +274,89 @@ def try_click_button(button, user):
     return False
 
 
+def get_cumulative_stats():
+    ensure_log_file()
+
+    total_clicked_all_time = 0
+    clicks_by_user = Counter()
+    runs_finished = 0
+    runs_without_clicks = 0
+    statuses = Counter()
+
+    try:
+        with LOG_PATH.open("r", newline="", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                user = (row.get("user") or "UNKNOWN_USER").strip()
+                status = (row.get("status") or "").strip()
+                details = (row.get("details") or "").strip()
+
+                if not status:
+                    continue
+
+                statuses[status] += 1
+
+                if status == "clicked":
+                    total_clicked_all_time += 1
+                    clicks_by_user[user] += 1
+
+                if user == "SYSTEM" and status == "summary" and "Run finished" in details:
+                    runs_finished += 1
+
+                if user == "SYSTEM" and status == "no_clicks":
+                    runs_without_clicks += 1
+
+    except Exception as e:
+        print(f"Greška pri čitanju kumulativne statistike: {e}")
+
+    top_users = clicks_by_user.most_common(20)
+
+    return {
+        "total_clicked_all_time": total_clicked_all_time,
+        "clicks_by_user": clicks_by_user,
+        "top_users": top_users,
+        "runs_finished": runs_finished,
+        "runs_without_clicks": runs_without_clicks,
+        "statuses": statuses,
+    }
+
+
+def build_telegram_message(total_clicked, unique_names, run_clicks_by_user, cumulative_stats):
+    lines = []
+    lines.append("Strava bot je završio.")
+    lines.append("")
+    lines.append("📊 U OVOM RUNU:")
+    lines.append(f"Podijeljeno kudosa: {total_clicked}")
+
+    if unique_names:
+        lines.append(f"Broj korisnika koji su dobili kudos: {len(unique_names)}")
+        lines.append("Korisnici:")
+        for user, count in run_clicks_by_user.most_common(20):
+            if count == 1:
+                lines.append(f"- {user}: 1 kudos")
+            else:
+                lines.append(f"- {user}: {count} kudosa")
+    else:
+        lines.append("Nije pronađena nijedna nova aktivnost za kudos.")
+
+    lines.append("")
+    lines.append("📈 UKUPNO:")
+    lines.append(f"Ukupno podijeljenih kudosa ikad: {cumulative_stats['total_clicked_all_time']}")
+    lines.append(f"Ukupno završenih runova: {cumulative_stats['runs_finished']}")
+    lines.append(f"Runovi bez klikova: {cumulative_stats['runs_without_clicks']}")
+
+    if cumulative_stats["top_users"]:
+        lines.append("")
+        lines.append("🏆 TOP 20 KORISNIKA PO UKUPNOM BROJU KUDOSA:")
+        for user, count in cumulative_stats["top_users"]:
+            if count == 1:
+                lines.append(f"- {user}: 1 kudos")
+            else:
+                lines.append(f"- {user}: {count} kudosa")
+
+    return "\n".join(lines)
+
+
 def send_telegram_report(total_clicked, kudos_names):
     tel_token = os.environ.get("TELEGRAM_TOKEN")
     tel_chat_id = os.environ.get("TELEGRAM_CHAT_ID")
@@ -286,19 +370,14 @@ def send_telegram_report(total_clicked, kudos_names):
         if name not in unique_names:
             unique_names.append(name)
 
-    if total_clicked > 0:
-        names_str = ", ".join(unique_names)
-        message = (
-            f"Strava bot je završio.\n\n"
-            f"Podijeljeno kudosa: {total_clicked}\n\n"
-            f"Kudose su dobili: {names_str}"
-        )
-    else:
-        message = (
-            "Strava bot je završio.\n\n"
-            "Podijeljeno kudosa: 0\n\n"
-            "Nije pronađena nijedna nova aktivnost za kudos."
-        )
+    run_clicks_by_user = Counter(kudos_names)
+    cumulative_stats = get_cumulative_stats()
+    message = build_telegram_message(
+        total_clicked=total_clicked,
+        unique_names=unique_names,
+        run_clicks_by_user=run_clicks_by_user,
+        cumulative_stats=cumulative_stats,
+    )
 
     try:
         url = f"https://api.telegram.org/bot{tel_token}/sendMessage"
@@ -306,7 +385,7 @@ def send_telegram_report(total_clicked, kudos_names):
             "chat_id": tel_chat_id,
             "text": message,
         }).encode("utf-8")
-        urllib.request.urlopen(url, data=data, timeout=15)
+        urllib.request.urlopen(url, data=data, timeout=20)
         print("Telegram izvješće uspješno poslano.")
     except Exception as e:
         print(f"Greška pri slanju Telegram poruke: {e}")
@@ -403,6 +482,11 @@ def main():
             )
 
             print(f"Ciklus {round_num} kliknuto {clicked_this_round}, ukupno {total_clicked}")
+            append_to_log(
+                "SYSTEM",
+                "cycle_summary",
+                f"cycle={round_num}; clicked_this_cycle={clicked_this_round}; total_clicked={total_clicked}"
+            )
 
             if clicked_this_round == 0:
                 idle_passes += 1
@@ -437,6 +521,11 @@ def main():
             )
 
             print(f"Final sweep {sweep_num} kliknuto {clicked_this_sweep}, ukupno {total_clicked}")
+            append_to_log(
+                "SYSTEM",
+                "sweep_summary",
+                f"sweep={sweep_num}; clicked_this_sweep={clicked_this_sweep}; total_clicked={total_clicked}"
+            )
 
             if total_clicked >= MAX_KUDOS:
                 break
@@ -464,7 +553,7 @@ def main():
         f"Run finished; total_clicked={total_clicked}; unique_users={len(unique_names)}"
     )
 
-    send_telegram_report(total_clicked, unique_names)
+    send_telegram_report(total_clicked, unique_names if unique_names else kudos_names)
 
     print(f"Ukupno kliknutih kudosa: {total_clicked}")
     print("KRAJ SKRIPTE")
