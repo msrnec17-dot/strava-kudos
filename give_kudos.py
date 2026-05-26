@@ -12,10 +12,10 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
 
 LOG_PATH = Path("output/kudos_log.csv")
-MAX_KUDOS = 35
-MAX_ROUNDS = 12
-FINAL_SWEEPS = 3
-MAX_IDLE_PASSES = 3
+MAX_KUDOS = 40
+MAX_ROUNDS = 14
+FINAL_SWEEPS = 4
+MAX_IDLE_PASSES = 4
 DASHBOARD_URL = "https://www.strava.com/dashboard"
 
 
